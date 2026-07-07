@@ -1,0 +1,8 @@
+{
+  "name": "scouting-skills",
+  "description": "Skills for Cub Scouts and Scouting America: pack/den leadership, advancement, and program planning helpers.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Frank Maulit"
+  }
+}

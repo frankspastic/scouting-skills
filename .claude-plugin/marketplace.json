@@ -1,0 +1,14 @@
+{
+  "name": "scouting-skills",
+  "owner": {
+    "name": "Frank Maulit"
+  },
+  "description": "Skills for Cub Scouts and Scouting America.",
+  "plugins": [
+    {
+      "name": "scouting-skills",
+      "source": "./",
+      "description": "Skills for Cub Scouts and Scouting America."
+    }
+  ]
+}
