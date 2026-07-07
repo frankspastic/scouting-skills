@@ -37,6 +37,13 @@ changes. Validate manifests with:
 claude plugin validate .
 ```
 
+## Skills
+
+- **pack-roster** — fetches the current pack roster (scouts, dens, ranks,
+  BSA IDs, parent contacts) from Scoutbook Plus
+  (advancements.scouting.org) via browser network capture, with a 24h
+  local cache in `~/.scouting-skills/`.
+
 ## Adding a skill
 
 Create a directory under `skills/` with a `SKILL.md`:
@@ -49,4 +56,5 @@ skills/
 
 `SKILL.md` needs YAML frontmatter with `name` and `description` (the
 description drives when Claude auto-invokes the skill), followed by the
-instructions. See `skills/example-skill/SKILL.md` for a template.
+instructions. Bundle supporting scripts in a `scripts/` subdirectory (see
+`skills/pack-roster/` for an example).
