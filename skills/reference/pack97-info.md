@@ -104,12 +104,12 @@ Den leaders:
 
 | Den | Leader(s) | Assistant(s) |
 |-----|-----------|--------------|
-| Arrow of Light (5th) | Matt M | |
-| Webelos (4th) | Joe G | Brent R |
-| Bears (3rd) | Willem S, Jennifer K | Ben K |
-| Wolves (2nd) | Frank M | |
-| Tigers (1st) | Frank M | |
-| Lions (K) | Victor S, Steven F | Filippo M |
+| Arrow of Light (5th) | Willem S, Jennifer K | Ben K |
+| Webelos (4th) | Frank M | Reyna W, Jorge P |
+| Bears (3rd) | Jason M | |
+| Wolves (2nd) | Victor S | Filippo M |
+| Tigers (1st) | Michael H | Kristine M |
+| Lions (K) | Ben M |
 
 Other pack roles:
 
@@ -119,12 +119,12 @@ Other pack roles:
 | Website Administrator | Victor Selvaraj | Website & calendar updates |
 | Campout Coordinator | Michael Kuster | Plans spring & fall campouts |
 | Record Keeper | Reyna Wiley | Collects BSA medical forms for events |
-| Advancement Chairs | Willem S, Filippo M | Purchase badges, belt loops, awards |
+| Advancement Chairs | Filippo M, Jorge P | Purchase badges, belt loops, awards |
 | Pinewood Derby Captain | Bill Kazmierski | ~20 hrs planning, Nov–Jan |
 | T-Shirt Coordinator | Maria Huemmer | Class B group purchase, fall |
-| Recruiting Coordinator | — OPEN — | 2–4 hrs/week Aug–Sep |
+| Recruiting Coordinator | Kristi Selvaraj | 2–4 hrs/week Aug–Sep |
 | Committee Member(s) | — OPEN — | 1–2 hrs/month |
-| Quartermaster | — OPEN — | Store pack equipment |
+| Quartermaster | Chris Kulakowski | Store pack equipment |
 
 Volunteer signup: [pack97.com/volunteer](https://pack97.com/volunteer/) · Role details: [pack97.com/volunteer-info](https://pack97.com/volunteer-info/)
 
