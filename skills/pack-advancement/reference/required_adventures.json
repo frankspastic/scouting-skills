@@ -1,9 +1,0 @@
-{
-  "_comment": "Each rank's required adventures, spelled exactly as they appear as row labels in the Full Pack Advancement Report (advancement.json catalog.adventures[rank]). Sourced from scouting.org's official Required Adventures table (see cub-scout-adventures.md). Used to bold/flag rows as required vs. elective when rendering a den's table — match by exact string against catalog.adventures[rank]; anything present in the catalog but not listed here is an elective. Tiger has no entries: as of the 2024 Tiger Trail Cards curriculum, Tiger's required-adventure content is tracked inside the rank's own requirement rows (Tiger v2024/v2022/v2019 Req #s), not as separate adventure rows, so nothing needs to be flagged there.",
-  "Lion": ["Bobcat (Lion)", "Mountain Lion", "Fun on the Run", "King of the Jungle", "Lion's Roar", "Lion's Pride"],
-  "Tiger": [],
-  "Wolf": ["Bobcat (Wolf)", "Council Fire", "Footsteps", "Paws on the Path", "Running With the Pack", "Safety in Numbers"],
-  "Bear": ["Bear Habitat", "Bear Strong", "Bobcat (Bear)", "Fellowship", "Paws for Action", "Standing Tall"],
-  "Webelos": ["Bobcat (Webelos)", "My Community", "My Family", "My Safety", "Stronger, Faster, Higher", "Webelos Walkabout"],
-  "Arrow of Light": ["Bobcat (AOL)", "Citizenship", "Duty to God", "First Aid", "Outdoor Adventurer", "Personal Fitness"]
-}
