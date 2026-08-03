@@ -52,7 +52,7 @@ Initial investment (registration + required items + Class B shirt) is estimated 
 | Item | Cost |
 |------|------|
 | Scouting America membership annual dues (pay online by Sept 30) | $85 |
-| Pack 97 annual dues | $110 |
+| Pack 97 annual dues | $50 |
 | Field uniform shirt (with pre-sewn patches) | $35 |
 | Uniform shorts/pants | $35 |
 | Cub Scout belt | $15 |
