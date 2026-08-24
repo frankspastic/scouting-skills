@@ -222,6 +222,56 @@ def extract_unit_roster(captures: list[dict]) -> tuple[list[dict], list[str]]:
     return scouts, sources
 
 
+def extract_registration_info(captures: list[dict]) -> tuple[dict, str | None]:
+    """Pull registration expiration per memberId from /organizations/v2/{guid}/orgYouths.
+
+    Each memberId can appear more than once here (one record per membership
+    year: the old registration plus a re-registration), and the array order
+    is not reliable — the superseded record can come after the live one. Pick
+    the record with isManuallyEnded == false (the live registration); among
+    ties, the one with the later expiration date.
+    """
+    cap = next((c for c in captures
+                if re.search(r"/organizations/v2/[^/]+/orgyouths", c["url"].lower())), None)
+    if not cap:
+        return {}, None
+
+    best: dict = {}
+    for m in (cap["body"] or {}).get("members") or []:
+        member_id = str(m.get("memberId") or "")
+        if not member_id:
+            continue
+        reg = m.get("registrarInfo") or {}
+        key = (not reg.get("isManuallyEnded", False), reg.get("registrationExpireDt") or "")
+        if member_id not in best or key > best[member_id]["_key"]:
+            best[member_id] = {
+                "registration_expire": reg.get("registrationExpireDt") or "",
+                "registration_status": reg.get("registrationStatus") or "",
+                "is_expired": bool(reg.get("isExpired", False)),
+                "date_of_birth": reg.get("dateOfBirth") or "",
+                "_key": key,
+            }
+    for v in best.values():
+        del v["_key"]
+    return best, cap["url"]
+
+
+def _merge_registration_info(scouts: list[dict], captures: list[dict], sources: list[str]) -> None:
+    """Attach registration_expire/registration_status/is_expired/date_of_birth
+    to each scout by bsa_id, in place. Fields default to empty/False when
+    orgYouths wasn't captured this run or a scout has no matching memberId
+    there — this is a best-effort supplement, not a required source."""
+    reg_by_id, reg_url = extract_registration_info(captures)
+    if reg_url:
+        sources.append(reg_url)
+    for s in scouts:
+        info = reg_by_id.get(s["bsa_id"], {})
+        s["registration_expire"] = info.get("registration_expire", "")
+        s["registration_status"] = info.get("registration_status", "")
+        s["is_expired"] = info.get("is_expired", False)
+        s["date_of_birth"] = info.get("date_of_birth", "")
+
+
 def extract_roster(captures: list[dict]) -> tuple[list[dict], list[str]]:
     """Extract the roster, preferring the known unit endpoints and falling
     back to a generic person-list heuristic (in case the API changes or a
@@ -230,6 +280,7 @@ def extract_roster(captures: list[dict]) -> tuple[list[dict], list[str]]:
     scouts, sources = extract_unit_roster(captures)
     if scouts:
         log(f"Unit roster endpoints: {len(scouts)} youth (with dens/ranks/parents)")
+        _merge_registration_info(scouts, captures, sources)
         return scouts, sources
     candidates = []  # (score, source_url, people)
     for cap in captures:
@@ -255,6 +306,7 @@ def extract_roster(captures: list[dict]) -> tuple[list[dict], list[str]]:
         log(f"Filtered {len(scouts) - len(youth)} adult/leader entries; {len(youth)} youth remain.")
         scouts = youth
     sources = [url]
+    _merge_registration_info(scouts, captures, sources)
     return scouts, sources
 
 
@@ -274,7 +326,8 @@ def write_outputs(scouts: list[dict], sources: list[str], data_dir: Path) -> Non
 
     with open(data_dir / "roster.csv", "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["first_name", "last_name", "bsa_id", "den", "rank", "parents"])
+        w.writerow(["first_name", "last_name", "bsa_id", "den", "rank",
+                     "date_of_birth", "registration_expire", "is_expired", "parents"])
         for s in roster["scouts"]:
             def fmt(p):
                 bits = [p["name"]]
@@ -285,7 +338,9 @@ def write_outputs(scouts: list[dict], sources: list[str], data_dir: Path) -> Non
                 return " ".join(bits)
             parents = "; ".join(fmt(p) for p in s["parents"])
             w.writerow([s["first_name"], s["last_name"], s["bsa_id"],
-                        s["den"], s["rank"], parents])
+                        s["den"], s["rank"], s.get("date_of_birth", ""),
+                        s.get("registration_expire", ""),
+                        s.get("is_expired", False), parents])
 
     log(f"Wrote {len(scouts)} scouts to {data_dir / 'roster.json'} and {data_dir / 'roster.csv'}")
 
@@ -311,7 +366,6 @@ def fetch_live(data_dir: Path, login_timeout: int) -> list[dict]:
 
     profile_dir = data_dir / "browser-profile"
     profile_dir.mkdir(parents=True, exist_ok=True)
-    pending = []   # Response objects, bodies read on the main thread later
     captures = []  # {"url", "body"} dicts
 
     def on_response(resp):
@@ -320,16 +374,14 @@ def fetch_live(data_dir: Path, login_timeout: int) -> list[dict]:
         except Exception:
             return
         if "json" in ct and not any(h in resp.url.lower() for h in NOISE_URL_HINTS):
-            log(f"captured JSON response: {resp.url}")
-            pending.append(resp)
-
-    def drain_pending():
-        while pending:
-            resp = pending.pop(0)
+            # Read the body immediately — if we defer this, a subsequent page
+            # navigation (e.g. the login redirect) can evict the response
+            # body before we get back to it, silently losing the capture.
             try:
                 body = resp.json()
             except Exception:
-                continue
+                return
+            log(f"captured JSON response: {resp.url}")
             captures.append({"url": resp.url, "body": body})
 
     with sync_playwright() as p:
@@ -371,14 +423,21 @@ def fetch_live(data_dir: Path, login_timeout: int) -> list[dict]:
         saved_count = 0
         scouts: list[dict] = []
         while time.time() < deadline:
-            drain_pending()
             # Persist captures as we go so a crash/timeout still leaves
             # everything on disk for inspection.
             if len(captures) > saved_count:
                 save_raw_captures(captures, data_dir / "raw")
                 saved_count = len(captures)
-            scouts, sources = extract_roster(captures)
+            # Only break early on the *rich* unit-roster endpoints (den/rank/
+            # parents). The broader orgYouths payload is also person-shaped
+            # and often arrives first, so breaking on extract_roster()'s
+            # generic fallback would stop the wait before the richer
+            # endpoints ever fire, silently downgrading every fetch to
+            # bare names + registration info. Fall back to the generic
+            # extraction only once the deadline is reached.
+            scouts, sources = extract_unit_roster(captures)
             if scouts:
+                _merge_registration_info(scouts, captures, sources)
                 break
             active = context.pages[-1] if context.pages else page
             if time.time() - last_status > 15:
@@ -399,7 +458,6 @@ def fetch_live(data_dir: Path, login_timeout: int) -> list[dict]:
                         pass
             time.sleep(3)
 
-        drain_pending()
         context.close()
 
     save_raw_captures(captures, data_dir / "raw")

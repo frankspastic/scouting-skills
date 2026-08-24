@@ -1,6 +1,6 @@
 # Cub Scout Adventures by Rank
 
-Source: [Google Sheet](https://docs.google.com/spreadsheets/d/1ZYv1Cm4ykZLRbSWdaPP1q5dSxZb-XPTpZi-4WG6zY58/edit?gid=0#gid=0) · Each adventure links to its official page on [scouting.org](https://www.scouting.org/cub-scout-adventures/).
+Compiled from a reference spreadsheet of the official BSA adventure list. Each adventure links to its official page on [scouting.org](https://www.scouting.org/cub-scout-adventures/).
 
 ## Required Adventures
 
