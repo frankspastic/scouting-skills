@@ -46,17 +46,31 @@ default, so repeat questions don't reopen the browser.
      "scout_count": 42,
      "scouts": [
        {"first_name": "…", "last_name": "…", "bsa_id": "…",
-        "den": "…", "rank": "…",
+        "den": "…", "rank": "…", "gender": "M",
         "date_of_birth": "2016-04-17",
         "registration_expire": "2026-12-31", "registration_status": "Re-Registered",
-        "is_expired": false,
+        "renewal_status": "Current", "is_expired": false,
         "parents": [{"name": "…", "relationship": "Parent/Guardian",
                      "email": "…", "phone": "…"}]}
      ]
    }
    ```
 
-   `date_of_birth`/`registration_expire`/`registration_status`/`is_expired`
+   `gender` is `M`/`F` (or `""` when the API has none on file) and comes
+   from the same unit `/youths` endpoint as den, rank and parents.
+
+   `renewal_status` is **not** `registration_status` and the two answer
+   different questions: `registration_status` says how the current
+   registration came to exist (`New`, `Re-Registered`, `Transfer`), while
+   `renewal_status` says where it stands in the yearly renewal cycle
+   (`Current`, `Eligible to Renew`, `Eligible to Renew (unit only)`,
+   `Renewed`, `Opted Out`, `Expired`). A scout can be `Re-Registered` and
+   still `Eligible to Renew`, so don't read either one off the other —
+   `Opted Out` in particular is the flag worth surfacing, since it means the
+   family has said they aren't coming back.
+
+   `date_of_birth`/`registration_expire`/`registration_status`/
+   `renewal_status`/`is_expired`
    come from the `orgYouths` endpoint (joined by `bsa_id`), a supplementary
    source — not the same endpoints the rest of the roster comes from. They
    default to empty/`false` if that endpoint wasn't captured this run. A
@@ -159,8 +173,8 @@ default, so repeat questions don't reopen the browser.
    Paid scouts who aren't in Scoutbook are **added to the sheet as extra
    rows**, sorted in by program level, with `Dues Paid` = `Yes` and
    `Registration Status` = `Not in Scoutbook (dues paid <date>)`. Name, den
-   and the payer's name/email/phone come from the form; BSA ID, birthday and
-   registration dates are deliberately left blank — filling them in would make
+   and the payer's name/email/phone come from the form; BSA ID, gender,
+   birthday and registration/renewal status are deliberately left blank — filling them in would make
    an unregistered scout look registered, and blank is the signal that
    somebody still has to file the registration. These rows are rebuilt from
    the payment sheets on every run, so they persist across syncs without
@@ -181,8 +195,9 @@ default, so repeat questions don't reopen the browser.
 
 7. **Optional: per-den summary report with charts.** If the user wants a
    report tab showing scout counts per den, broken down by registration
-   expired/not-expired and dues paid/not-paid — plus bar charts of the same —
-   run (from this skill's directory):
+   expired/not-expired, dues paid/not-paid, and male/female — plus charts of
+   the same and a pack-wide renewal-status breakdown — run (from this
+   skill's directory):
 
    ```bash
    uv run scripts/den_report.py
@@ -190,15 +205,38 @@ default, so repeat questions don't reopen the browser.
 
    This writes (creating it if needed) a **Den Report** tab in the roster
    spreadsheet: one row per den with scout count, registration
-   expired/not-expired counts, and dues paid/not-paid counts, plus a Total
-   row and two stacked column charts. Unlike a normal sync, the numbers
+   expired/not-expired counts, dues paid/not-paid counts, and male/female
+   counts, plus a Total row and five charts — three stacked column charts
+   (one per breakdown, den by den) and two pies of pack-wide totals: the
+   male/female split, which reads the Male/Female cells of the Total row
+   rather than recomputing anything, and the renewal-status split.
+
+   Renewal status is one multi-valued field rather than a pair of columns,
+   so it can't be a column on the den table the way male/female is. It gets
+   its own small live-formula label/count block written two columns to the
+   right of the den table (normally `J3`, one blank gutter column after the
+   den table's last column), and the pie reads that block. The statuses are
+   discovered from the roster tab at run time and ordered by renewal cycle
+   (Current → Eligible to Renew → Renewed → Opted Out → Expired), not
+   alphabetically; a status the API adds later still appears, sorted after
+   the known ones. Blank renewal status becomes a "Not on file" slice rather
+   than being dropped, so the slices sum to the roster — that's where the
+   paid-but-not-in-Scoutbook rows land. Rerun the script when a status
+   appears or disappears from the roster, same as for dens; the counts
+   themselves are live. Male and Female are each counted explicitly rather
+   than one being derived as scouts-minus-the-other, so a scout with no
+   gender on file isn't silently counted as female — which is why the
+   paid-but-not-in-Scoutbook rows (blank gender) make Male + Female come to
+   less than Scouts. Unlike a normal sync, the numbers
    themselves are **live spreadsheet formulas** (`COUNTIFS`) reading whichever
    other tab has the roster (normally the one `sync_roster_to_sheet.py`
    writes) — they recalculate on their own as that tab changes, no rerun
    needed. Only the *set of den rows* is fixed at write time (from that tab's
    Den column, at run time — not from `roster.json`); rerun the script when a
    den's been added, removed, or renamed, or a paid-but-unregistered scout's
-   program level changes. This script reads only the spreadsheet — it never
+   program level changes. The same is true of which dens are excluded: that
+   split is applied at write time, so a den moving in or out of
+   `EXCLUDED_DENS` needs a rerun. This script reads only the spreadsheet — it never
    touches `roster.json` or `dues.json`, so it doesn't need `fetch_roster.py`
    or `fetch_dues.py` run first, only `sync_roster_to_sheet.py` at some point
    before it (for the roster tab and its Dues Paid column to exist).
@@ -208,11 +246,28 @@ default, so repeat questions don't reopen the browser.
    them show up twice in the roster tab (see Troubleshooting) shows up here
    as an extra small row next to the numbered den.
 
+   **Two dens are left out of every number on this tab**: `Lion Den 999 OPT
+   OUT DEN` and `No Den Assigned` (the `EXCLUDED_DENS` constant in the
+   script). They're excluded from the Total row, all three column charts,
+   both pies and the renewal block — the pack's stats are meant to describe
+   scouts who are actually participating. They are *not* dropped: each still
+   gets its own row, laid out below the Total under an "Excluded from pack
+   totals and charts" heading, so the numbers stay visible and nobody reads
+   the report wondering where those scouts went. The title row names the
+   exclusions too. `--include-all` counts them like any other den.
+
+   Worth knowing when reading the renewal pie: as of this writing every
+   scout with renewal status `Opted Out` sits in one of those two excluded
+   dens, so that slice reads 0 on the pie even though the pack has six. The
+   opt-out count lives in the excluded rows instead — don't report "no
+   opt-outs" off the pie alone.
+
    `--sheet`/`--dry-run` work like `sync_roster_to_sheet.py`; `--tab` names
    the Den Report tab itself (default `Den Report`) — the roster tab doesn't
    need naming, it's found automatically as the other tab. `--no-dues` drops
    the dues columns from the report even if the roster tab has a Dues Paid
-   column. Rerunning replaces the tab's den rows and charts, so it's safe to
+   column, `--no-gender` does the same for the male/female columns and both
+   gender charts, and `--no-renewal` drops the renewal block and its pie. Rerunning replaces the tab's den rows and charts, so it's safe to
    run repeatedly; day-to-day count changes don't need a rerun at all.
 
 ## Troubleshooting
@@ -234,6 +289,10 @@ default, so repeat questions don't reopen the browser.
   report the scouts and tell the user parent info wasn't in the payload
   rather than guessing. (The API also doesn't say mother/father — every
   guardian is reported as "Parent/Guardian".)
+- **Blank gender or renewal status for one scout** — the API had none on
+  file; report it as unknown rather than guessing. Blank for *everyone* is
+  the `orgYouths` problem above (renewal status) or a changed field name on
+  the unit `/youths` endpoint (gender).
 - **Empty den or rank** — normal for newly joined scouts who haven't been
   assigned a den or earned a rank yet; report them as unassigned, don't
   drop them.

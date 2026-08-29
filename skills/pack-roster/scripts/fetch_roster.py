@@ -142,6 +142,7 @@ def normalize_person(p: dict) -> dict:
         "rank": _get_first(p, "currentrankname", "rankname", "currentrank", "rank",
                            "highestrankapproved"),
         "member_type": _get_first(p, "membertype", "positiontype", "isadult", "personrole"),
+        "gender": _get_first(p, "gender", "sex"),
         "parents": parents,
     }
 
@@ -215,6 +216,7 @@ def extract_unit_roster(captures: list[dict]) -> tuple[list[dict], list[str]]:
             "bsa_id": str(y.get("memberId") or ""),
             "den": _den_from_positions(y.get("positions")),
             "rank": _rank_from_history(y),
+            "gender": y.get("gender") or "",
             "member_type": y.get("memberType") or "Youth",
             "parents": parents_by_youth.get(y.get("userId"), []),
         })
@@ -247,8 +249,10 @@ def extract_registration_info(captures: list[dict]) -> tuple[dict, str | None]:
             best[member_id] = {
                 "registration_expire": reg.get("registrationExpireDt") or "",
                 "registration_status": reg.get("registrationStatus") or "",
+                "renewal_status": reg.get("renewalStatus") or "",
                 "is_expired": bool(reg.get("isExpired", False)),
                 "date_of_birth": reg.get("dateOfBirth") or "",
+                "gender": m.get("gender") or "",
                 "_key": key,
             }
     for v in best.values():
@@ -257,7 +261,7 @@ def extract_registration_info(captures: list[dict]) -> tuple[dict, str | None]:
 
 
 def _merge_registration_info(scouts: list[dict], captures: list[dict], sources: list[str]) -> None:
-    """Attach registration_expire/registration_status/is_expired/date_of_birth
+    """Attach registration_expire/registration_status/renewal_status/is_expired/date_of_birth
     to each scout by bsa_id, in place. Fields default to empty/False when
     orgYouths wasn't captured this run or a scout has no matching memberId
     there — this is a best-effort supplement, not a required source."""
@@ -268,8 +272,17 @@ def _merge_registration_info(scouts: list[dict], captures: list[dict], sources: 
         info = reg_by_id.get(s["bsa_id"], {})
         s["registration_expire"] = info.get("registration_expire", "")
         s["registration_status"] = info.get("registration_status", "")
+        # Distinct from registration_status: where that says how the current
+        # registration was created (New / Re-Registered / Transfer), this says
+        # where it stands in the yearly renewal cycle (Current, Eligible to
+        # Renew, Renewed, Expired, Opted Out).
+        s["renewal_status"] = info.get("renewal_status", "")
         s["is_expired"] = info.get("is_expired", False)
         s["date_of_birth"] = info.get("date_of_birth", "")
+        # Gender already comes from the unit /youths endpoint; only fall back
+        # to orgYouths when that endpoint didn't supply it.
+        if not s.get("gender"):
+            s["gender"] = info.get("gender", "")
 
 
 def extract_roster(captures: list[dict]) -> tuple[list[dict], list[str]]:
@@ -326,8 +339,9 @@ def write_outputs(scouts: list[dict], sources: list[str], data_dir: Path) -> Non
 
     with open(data_dir / "roster.csv", "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["first_name", "last_name", "bsa_id", "den", "rank",
-                     "date_of_birth", "registration_expire", "is_expired", "parents"])
+        w.writerow(["first_name", "last_name", "bsa_id", "den", "rank", "gender",
+                     "date_of_birth", "registration_expire", "is_expired",
+                     "renewal_status", "parents"])
         for s in roster["scouts"]:
             def fmt(p):
                 bits = [p["name"]]
@@ -338,9 +352,11 @@ def write_outputs(scouts: list[dict], sources: list[str], data_dir: Path) -> Non
                 return " ".join(bits)
             parents = "; ".join(fmt(p) for p in s["parents"])
             w.writerow([s["first_name"], s["last_name"], s["bsa_id"],
-                        s["den"], s["rank"], s.get("date_of_birth", ""),
+                        s["den"], s["rank"], s.get("gender", ""),
+                        s.get("date_of_birth", ""),
                         s.get("registration_expire", ""),
-                        s.get("is_expired", False), parents])
+                        s.get("is_expired", False),
+                        s.get("renewal_status", ""), parents])
 
     log(f"Wrote {len(scouts)} scouts to {data_dir / 'roster.json'} and {data_dir / 'roster.csv'}")
 

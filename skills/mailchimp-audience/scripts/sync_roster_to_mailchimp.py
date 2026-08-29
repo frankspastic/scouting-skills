@@ -24,6 +24,9 @@ What it writes, per parent email:
     SCOUT{n}EXP      registration expiration, M/D/YYYY
     SCOUT{n}BDAY     date of birth, M/D/YYYY
     SCOUT{n}PAID     Yes/No from the dues sheets (fetch_dues.py)
+    SCOUT{n}RNEW     renewal status from the roster (Current / Eligible to Renew /
+                     Renewed / Opted Out / ...) — distinct from SCOUT{n}EXP, which
+                     is only the date the current registration runs out
     SCOUT{n}BSAI     BSA member ID, from the roster (tag is "BSAI" not "BSAID" —
                      Mailchimp truncates merge tags to 10 characters)
 
@@ -121,14 +124,28 @@ def load_json(path: Path, what: str, required: bool) -> dict | None:
 
 def family_scouts(roster: dict) -> dict[str, dict]:
     """Group roster scouts by each guardian email (both parents get a member —
-    that's how the audience has always been built)."""
+    that's how the audience has always been built).
+
+    A scout is added to a given email at most once. Scoutbook often carries
+    the same guardian twice on one scout (two person records, same address),
+    and without this the scout is appended once per duplicate — burning a
+    SCOUT{n} slot on a copy of themselves and, for a family with a real
+    second scout, pushing that sibling out of the audience entirely.
+    """
     families: dict[str, dict] = {}
+    seen: dict[str, set] = {}
     for scout in roster["scouts"]:
+        # bsa_id identifies a roster scout; fall back to the name for scouts
+        # that have none yet (the paid-but-not-registered ones added later).
+        key = scout.get("bsa_id") or (scout["first_name"], scout["last_name"])
         for parent in scout.get("parents") or []:
             email = (parent.get("email") or "").strip().lower()
             if not email:
                 continue
             fam = families.setdefault(email, {"parent": parent, "scouts": []})
+            if key in seen.setdefault(email, set()):
+                continue
+            seen[email].add(key)
             fam["scouts"].append(scout)
     return families
 
@@ -153,12 +170,14 @@ def desired_fields(fam: dict, paid_ids: set[str], current: dict) -> tuple[dict, 
             fields[f"{prefix}BDAY"] = ""
             fields[f"{prefix}PAID"] = ""
             fields[f"{prefix}BSAI"] = ""
+            fields[f"{prefix}RNEW"] = ""
             continue
         fields[f"{prefix}NAME"] = f"{scout['first_name']} {scout['last_name']}"
         fields[f"{prefix}DEN"] = scout.get("den_level") or den_level(scout)
         fields[f"{prefix}EXP"] = mdy(scout.get("registration_expire", ""))
         fields[f"{prefix}BDAY"] = mdy(scout.get("date_of_birth", ""))
         fields[f"{prefix}BSAI"] = scout.get("bsa_id") or ""
+        fields[f"{prefix}RNEW"] = scout.get("renewal_status") or ""
         if scout.get("paid_override") is not None:
             fields[f"{prefix}PAID"] = "Yes" if scout["paid_override"] else "No"
         else:

@@ -63,7 +63,8 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 DUES_COLUMN = "Dues Paid"
 HEADER = [
     "First Name", "Last Name", "Den", "Rank", DUES_COLUMN, "BSA ID",
-    "Date of Birth", "Registration Expires", "Registration Status",
+    "Gender", "Date of Birth", "Registration Expires", "Registration Status",
+    "Renewal Status",
     "Parent/Guardian Names", "Parent Emails", "Parent Phones",
 ]
 
@@ -148,8 +149,9 @@ def roster_row(s: dict, dues_cell: list[str]) -> list:
     return [
         s["first_name"], s["last_name"], s.get("den", ""), s.get("rank", ""),
         *dues_cell,
-        s["bsa_id"], s.get("date_of_birth", ""), s.get("registration_expire", ""),
-        s.get("registration_status", ""),
+        s["bsa_id"], s.get("gender", ""), s.get("date_of_birth", ""),
+        s.get("registration_expire", ""),
+        s.get("registration_status", ""), s.get("renewal_status", ""),
         "; ".join(p["name"] for p in parents),
         "; ".join(p.get("email", "") for p in parents if p.get("email")),
         "; ".join(p.get("phone", "") for p in parents if p.get("phone")),
@@ -160,7 +162,7 @@ def unregistered_row(payment: dict) -> list:
     """A paid scout who isn't in Scoutbook, as a roster row.
 
     Only the fields the payment form actually knows are filled: name, program
-    level, and the payer as the guardian contact. BSA ID, birthday and
+    level, and the payer as the guardian contact. BSA ID, gender, birthday and
     registration dates stay blank because inventing them would make an
     unregistered scout look registered — which is exactly the thing someone
     reading this row needs to notice and fix.
@@ -169,8 +171,8 @@ def unregistered_row(payment: dict) -> list:
         payment["first_name"], payment["last_name"],
         fetch_dues.den_label(payment.get("den", "")), "",
         "Yes",
-        "", "", "",
-        f"Not in Scoutbook (dues paid {payment['paid_date']})",
+        "", "", "", "",
+        f"Not in Scoutbook (dues paid {payment['paid_date']})", "",
         payment.get("payer", ""), payment.get("payer_email", ""),
         payment.get("payer_phone", ""),
     ]

@@ -63,6 +63,8 @@ uv run scripts/sync_roster_to_mailchimp.py --live     # apply it
 uv run scripts/mailchimp_audience.py summary
 uv run scripts/mailchimp_audience.py tags
 uv run scripts/mailchimp_audience.py fields
+uv run scripts/mailchimp_audience.py add-field --tag SCOUT1RNEW \
+    --name "Scout 1 Renewal Status" --type text
 uv run scripts/mailchimp_audience.py list --status subscribed --tag "Wolf Den"
 uv run scripts/mailchimp_audience.py get --email jane@example.com
 uv run scripts/mailchimp_audience.py search --query smith
@@ -76,6 +78,14 @@ Every subcommand prints JSON to stdout (log/progress lines go to stderr) —
 read that JSON and answer the user's actual question directly (a count, a
 member's status, a tag list) rather than dumping the raw JSON at them,
 unless they asked for the full list.
+
+**Merge fields must exist before anything can fill them.** A merge field the
+audience doesn't have makes Mailchimp reject the whole write (exit 4), so
+`add-field` first, then sync. Merge tags are capped at 10 characters, which
+is why the audience's are truncated (`SCOUT1BSAI`, `SCOUT1RNEW`). `add-field`
+is idempotent by tag and won't duplicate an existing field — worth caring
+about, because Mailchimp will happily create a second field with the same
+*name* and then the member data splits across the two.
 
 **Real changes, confirm first.** `upsert`, `tag`, `unsubscribe`, and
 `sync_roster_to_mailchimp.py --live` write to the live Mailchimp audience —
@@ -110,6 +120,20 @@ first is good practice), same as any other real-world-effect action.
   reports **subscribed** members only, while a full `list` dump counts
   unsubscribed ones too; the two numbers differ by design, so compare
   like with like before concluding a tag was lost.
+- **A scout fills at most one slot per parent email.** Scoutbook frequently
+  carries the same guardian twice on one scout (two person records, same
+  address), and the grouping used to append the scout once per duplicate —
+  filling SCOUT2/SCOUT3 with copies of SCOUT1, and for a family with a real
+  sibling, pushing that sibling off the member entirely. Deduped by BSA ID
+  (by name for scouts that have none yet) in `family_scouts()`. If a member
+  still shows the same scout twice, that's stale data from before this fix;
+  a sync clears it.
+- **`SCOUT{n}RNEW` is the scout's renewal status** (`Current`, `Eligible to
+  Renew`, `Renewed`, `Opted Out`, …), straight from the roster's
+  `renewal_status`. It is not `SCOUT{n}EXP`: that's only the date the current
+  registration runs out, while this says where the family stands in the
+  renewal cycle. `Opted Out` means they've said they aren't coming back —
+  worth filtering out of "renew now" campaigns rather than nagging them.
 - **`--include-unregistered`** additionally adds payers whose scouts paid dues
   but aren't in Scoutbook yet, from the dues form's own names. Off by default:
   the pack hasn't registered those scouts, so it's the user's call.

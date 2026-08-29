@@ -156,6 +156,33 @@ def cmd_fields(session, base_url, audience_id, args) -> None:
     emit(fields)
 
 
+def cmd_add_field(session, base_url, audience_id, args) -> None:
+    """Create a merge field on the audience. Idempotent by tag: an existing
+    field with the same tag is left alone rather than duplicated, since
+    Mailchimp happily creates a second field with the same name and the
+    member data then splits across the two."""
+    existing = request(
+        session, "GET", f"{base_url}/lists/{audience_id}/merge-fields",
+        params={"count": 1000},
+    ).get("merge_fields", [])
+    by_tag = {f["tag"]: f for f in existing}
+
+    if args.tag in by_tag:
+        f = by_tag[args.tag]
+        log(f"Merge field {args.tag} already exists ({f['name']!r}, {f['type']}) — leaving it alone")
+        emit({"tag": f["tag"], "name": f["name"], "type": f["type"], "created": False})
+        return
+
+    body = {"tag": args.tag, "name": args.name, "type": args.type, "required": False}
+    if args.public is False:
+        body["public"] = False
+    data = request(
+        session, "POST", f"{base_url}/lists/{audience_id}/merge-fields", json=body
+    )
+    log(f"Created merge field {data['tag']} ({data['name']!r}, {data['type']})")
+    emit({"tag": data["tag"], "name": data["name"], "type": data["type"], "created": True})
+
+
 def cmd_list(session, base_url, audience_id, args) -> None:
     params = {
         "count": args.limit,
@@ -284,6 +311,17 @@ def main() -> None:
     sub.add_parser("tags", help="tags in use, with member counts")
     sub.add_parser("fields", help="merge field definitions (name/type/required)")
 
+    p = sub.add_parser("add-field", help="create a merge field on the audience")
+    p.add_argument("--tag", required=True,
+                   help="merge tag, max 10 chars (e.g. SCOUT1RNEW)")
+    p.add_argument("--name", required=True, help="display name (e.g. 'Scout 1 Renewal Status')")
+    p.add_argument("--type", default="text",
+                   choices=["text", "number", "address", "phone", "date",
+                            "url", "imageurl", "radio", "dropdown", "birthday", "zip"],
+                   help="field type (default: text)")
+    p.add_argument("--public", action="store_true", default=False,
+                   help="show on signup forms (default: hidden, like the other SCOUT* fields)")
+
     p = sub.add_parser("list", help="list members")
     p.add_argument("--status", choices=["subscribed", "unsubscribed", "cleaned", "pending"])
     p.add_argument("--tag")
@@ -317,6 +355,7 @@ def main() -> None:
         "summary": cmd_summary,
         "tags": cmd_tags,
         "fields": cmd_fields,
+        "add-field": cmd_add_field,
         "list": cmd_list,
         "get": cmd_get,
         "search": cmd_search,
