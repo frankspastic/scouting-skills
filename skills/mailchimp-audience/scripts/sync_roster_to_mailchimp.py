@@ -96,6 +96,16 @@ def log(msg: str) -> None:
     print(f"[sync_roster_to_mailchimp] {msg}", file=sys.stderr, flush=True)
 
 
+def is_opt_out_den(scout: dict) -> bool:
+    """Den 999 is an administrative holding pen for scouts who've said they
+    aren't coming back, not a real den. Its name starts with a program level
+    ("Lion Den 999 OPT OUT DEN") that den_level() would happily believe, which
+    is how two former Webelos ended up labelled Lions. Skip these scouts so
+    the audience keeps whatever it already holds for them.
+    """
+    return "999" in (scout.get("den") or "")
+
+
 def den_level(scout: dict) -> str:
     den = (scout.get("den") or "").lower()
     for key, label in DEN_LEVELS:
@@ -135,6 +145,8 @@ def family_scouts(roster: dict) -> dict[str, dict]:
     families: dict[str, dict] = {}
     seen: dict[str, set] = {}
     for scout in roster["scouts"]:
+        if is_opt_out_den(scout):
+            continue
         # bsa_id identifies a roster scout; fall back to the name for scouts
         # that have none yet (the paid-but-not-registered ones added later).
         key = scout.get("bsa_id") or (scout["first_name"], scout["last_name"])
@@ -260,7 +272,11 @@ def main() -> None:
                 "last_name": payment["last_name"],
                 "bsa_id": "",
                 "den": "",
-                "den_level": fetch_dues.den_label(payment.get("den", "")),
+                # den_label() speaks the dues form's vocabulary ("Arrow of
+                # Light"); the audience holds the roster's ("AOL"). Normalize
+                # so an unregistered scout reads the same as their den-mates.
+                "den_level": den_level(
+                    {"den": fetch_dues.den_label(payment.get("den", ""))}),
                 "rank": "",
                 "registration_expire": "",
                 "date_of_birth": "",
