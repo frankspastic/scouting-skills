@@ -158,21 +158,79 @@ def roster_row(s: dict, dues_cell: list[str]) -> list:
     ]
 
 
-def unregistered_row(payment: dict) -> list:
+# Roster den names lead with the program level ("Aol Den 6 (Male)", "Tiger Den
+# 19"); the dues form only knows the level. AOL is checked before Webelos so
+# the two can't be confused.
+ROSTER_DEN_LEVELS = (
+    ("aol", "Arrow of Light"),
+    ("arrow of light", "Arrow of Light"),
+    ("webelos", "Webelos"),
+    ("bear", "Bear"),
+    ("wolf", "Wolf"),
+    ("tiger", "Tiger"),
+    ("lion", "Lion"),
+)
+
+
+def roster_den_level(den: str) -> str:
+    den = den.lower()
+    for key, label in ROSTER_DEN_LEVELS:
+        if key in den:
+            return label
+    return ""
+
+
+def dens_by_level(roster: dict) -> dict[str, list[str]]:
+    """Program level -> the roster's numbered dens at that level, rebuilt from
+    roster.json on every run so a renamed or new den is picked up on its own.
+    The opt-out holding den ("Lion Den 999 OPT OUT DEN") is not a real den and
+    would otherwise make Lion look ambiguous."""
+    levels: dict[str, set[str]] = {}
+    for s in roster["scouts"]:
+        den = s.get("den") or ""
+        if not den or "999" in den or "opt out" in den.lower():
+            continue
+        level = roster_den_level(den)
+        if level:
+            levels.setdefault(level, set()).add(den)
+    return {level: sorted(dens) for level, dens in levels.items()}
+
+
+def unregistered_den(payment: dict, levels: dict[str, list[str]]) -> str:
+    """The numbered roster den for a payment-only scout, so their row reads
+    like their den-mates' ("Tiger" -> "Tiger Den 19"). Falls back to the bare
+    program level, with a warning, when the level has no den or several (AOL
+    has a boys' and a girls' den, and the form doesn't say which)."""
+    label = fetch_dues.den_label(payment.get("den", ""))
+    dens = levels.get(label, [])
+    if len(dens) == 1:
+        return dens[0]
+    who = f"{payment['first_name']} {payment['last_name']}"
+    if dens:
+        log(f"Den for {who}: {label} could be {' or '.join(dens)} — left as "
+            f"'{label}'; set it in Scoutbook once they're registered")
+    else:
+        log(f"Den for {who}: no roster den at level '{label}' — left as '{label}'")
+    return label
+
+
+def unregistered_row(payment: dict, den: str) -> list:
     """A paid scout who isn't in Scoutbook, as a roster row.
 
     Only the fields the payment form actually knows are filled: name, program
-    level, and the payer as the guardian contact. BSA ID, gender, birthday and
-    registration dates stay blank because inventing them would make an
+    level, and the payer as the guardian contact. Renewal status says "Not
+    Registered" outright. BSA ID, gender, birthday and registration dates stay
+    blank because inventing them would make an
     unregistered scout look registered — which is exactly the thing someone
     reading this row needs to notice and fix.
     """
     return [
         payment["first_name"], payment["last_name"],
-        fetch_dues.den_label(payment.get("den", "")), "",
+        den, "",
         "Yes",
         "", "", "", "",
-        f"Not in Scoutbook (dues paid {payment['paid_date']})", "",
+        f"Not in Scoutbook (dues paid {payment['paid_date']})",
+        fetch_dues.NOT_REGISTERED,
         payment.get("payer", ""), payment.get("payer_email", ""),
         payment.get("payer_phone", ""),
     ]
@@ -202,11 +260,11 @@ def build_rows(roster: dict, dues: dict | None) -> tuple[list[list], list[str]]:
          roster_row(s, ["Yes" if s["bsa_id"] in paid_ids else "No"] if dues else []))
         for s in roster["scouts"]
     ]
-    entries += [
-        (scout_sort_key(fetch_dues.den_label(p.get("den", "")), p["last_name"], p["first_name"]),
-         unregistered_row(p))
-        for p in extras
-    ]
+    levels = dens_by_level(roster)
+    for p in extras:
+        den = unregistered_den(p, levels)
+        entries.append((scout_sort_key(den, p["last_name"], p["first_name"]),
+                        unregistered_row(p, den)))
     rows = [row for _, row in sorted(entries, key=lambda e: e[0])]
 
     title = f"Pack Roster — updated {roster.get('fetched_at', '')}"

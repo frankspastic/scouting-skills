@@ -60,7 +60,7 @@ NO_RENEWAL_LABEL = "Not on file"
 # isn't listed here sorts after these, alphabetically.
 RENEWAL_ORDER = [
     "Current", "Eligible to Renew", "Eligible to Renew (unit only)",
-    "Renewed", "Opted Out", "Expired",
+    "Renewed", "Opted Out", "Expired", "Not Registered",
 ]
 NO_DEN_LABEL = "No Den Assigned"
 

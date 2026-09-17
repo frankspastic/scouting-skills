@@ -171,12 +171,20 @@ default, so repeat questions don't reopen the browser.
    one run.
 
    Paid scouts who aren't in Scoutbook are **added to the sheet as extra
-   rows**, sorted in by program level, with `Dues Paid` = `Yes` and
-   `Registration Status` = `Not in Scoutbook (dues paid <date>)`. Name, den
-   and the payer's name/email/phone come from the form; BSA ID, gender,
-   birthday and registration/renewal status are deliberately left blank — filling them in would make
-   an unregistered scout look registered, and blank is the signal that
-   somebody still has to file the registration. These rows are rebuilt from
+   rows**, sorted in with their den, with `Dues Paid` = `Yes` and
+   `Registration Status` = `Not in Scoutbook (dues paid <date>)`. Name and
+   the payer's name/email/phone come from the form. The form only knows the
+   program level ("Tiger"), so the Den column is resolved on every run to the
+   roster's numbered den at that level ("Tiger Den 19"), with the list of
+   dens rebuilt from `roster.json` each time. Den 999 (the opt-out holding
+   den) is ignored for this. When a level has several dens (AOL has
+   `Aol Den 6 (Male)` and `Aol Den 9 (Female)`, and the form doesn't say
+   which) or none, the row keeps the bare level and a warning goes to
+   stderr. Pass that warning on to the user. `Renewal Status` says
+   `Not Registered`. BSA ID, gender, birthday and registration expiration are
+   deliberately left blank — filling them in would make an unregistered scout
+   look registered, and blank is the signal that somebody still has to file
+   the registration. These rows are rebuilt from
    the payment sheets on every run, so they persist across syncs without
    anyone hand-editing the sheet — and they disappear on their own once the
    scout shows up in Scoutbook and the name matches. Ambiguous payments are
@@ -217,11 +225,12 @@ default, so repeat questions don't reopen the browser.
    right of the den table (normally `J3`, one blank gutter column after the
    den table's last column), and the pie reads that block. The statuses are
    discovered from the roster tab at run time and ordered by renewal cycle
-   (Current → Eligible to Renew → Renewed → Opted Out → Expired), not
-   alphabetically; a status the API adds later still appears, sorted after
-   the known ones. Blank renewal status becomes a "Not on file" slice rather
-   than being dropped, so the slices sum to the roster — that's where the
-   paid-but-not-in-Scoutbook rows land. Rerun the script when a status
+   (Current → Eligible to Renew → Renewed → Opted Out → Expired → Not
+   Registered), not alphabetically; a status the API adds later still
+   appears, sorted after the known ones. The paid-but-not-in-Scoutbook rows
+   get their own `Not Registered` slice. Blank renewal status (a Scoutbook
+   scout the API had none for) becomes a "Not on file" slice rather than
+   being dropped, so the slices sum to the roster. Rerun the script when a status
    appears or disappears from the roster, same as for dens; the counts
    themselves are live. Male and Female are each counted explicitly rather
    than one being derived as scouts-minus-the-other, so a scout with no
@@ -240,11 +249,10 @@ default, so repeat questions don't reopen the browser.
    touches `roster.json` or `dues.json`, so it doesn't need `fetch_roster.py`
    or `fetch_dues.py` run first, only `sync_roster_to_sheet.py` at some point
    before it (for the roster tab and its Dues Paid column to exist).
-   Paid-but-not-in-Scoutbook scouts appear as their own den row (e.g. "Tiger"
-   with no number) rather than a footnote, since they're real rows on the
-   roster tab with a program-level-only Den value — the same thing that makes
-   them show up twice in the roster tab (see Troubleshooting) shows up here
-   as an extra small row next to the numbered den.
+   Paid-but-not-in-Scoutbook scouts count toward their numbered den's row,
+   since the roster tab resolves their Den value to it. Only one whose level
+   is ambiguous or has no den (see step 6) still shows up as its own
+   level-only row (e.g. "Arrow of Light").
 
    **Two dens are left out of every number on this tab**: `Lion Den 999 OPT
    OUT DEN` and `No Den Assigned` (the `EXCLUDED_DENS` constant in the

@@ -25,7 +25,8 @@ What it writes, per parent email:
     SCOUT{n}BDAY     date of birth, M/D/YYYY
     SCOUT{n}PAID     Yes/No from the dues sheets (fetch_dues.py)
     SCOUT{n}RNEW     renewal status from the roster (Current / Eligible to Renew /
-                     Renewed / Opted Out / ...) — distinct from SCOUT{n}EXP, which
+                     Renewed / Opted Out / ...), or "Not Registered" for a
+                     paid scout not yet in Scoutbook — distinct from SCOUT{n}EXP, which
                      is only the date the current registration runs out
     SCOUT{n}BSAI     BSA member ID, from the roster (tag is "BSAI" not "BSAID" —
                      Mailchimp truncates merge tags to 10 characters)
@@ -280,6 +281,7 @@ def main() -> None:
                 "rank": "",
                 "registration_expire": "",
                 "date_of_birth": "",
+                "renewal_status": fetch_dues.NOT_REGISTERED,
                 "paid_override": True,
             })
 

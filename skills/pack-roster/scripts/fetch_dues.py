@@ -240,6 +240,11 @@ DEN_LABELS = {
 }
 
 
+# Renewal status for a scout who paid dues but isn't in Scoutbook, used by
+# both the roster sheet and the Mailchimp sync so the two read the same.
+NOT_REGISTERED = "Not Registered"
+
+
 def den_label(slug: str) -> str:
     """'webelos-2' -> 'Arrow of Light'; anything unrecognized is passed through
     so a renamed form option shows up as itself rather than vanishing."""

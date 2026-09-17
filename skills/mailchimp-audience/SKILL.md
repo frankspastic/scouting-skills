@@ -134,6 +134,8 @@ first is good practice), same as any other real-world-effect action.
   registration runs out, while this says where the family stands in the
   renewal cycle. `Opted Out` means they've said they aren't coming back —
   worth filtering out of "renew now" campaigns rather than nagging them.
+  Paid scouts added by `--include-unregistered` get `Not Registered`, the
+  same value the roster sheet shows for them.
 - **`--include-unregistered`** additionally adds payers whose scouts paid dues
   but aren't in Scoutbook yet, from the dues form's own names. Off by default:
   the pack hasn't registered those scouts, so it's the user's call.
