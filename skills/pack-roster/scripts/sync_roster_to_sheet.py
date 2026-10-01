@@ -362,6 +362,8 @@ def main() -> None:
                              "(default: DUES_SHEET_ID config)")
     parser.add_argument("--no-dues", action="store_true",
                         help=f"Skip the {DUES_COLUMN!r} column even if a dues sheet is configured")
+    parser.add_argument("--no-den-report", action="store_true",
+                        help="Don't refresh the Den Report tab's den rows and charts afterwards")
     parser.add_argument("--dry-run", action="store_true", help="Print what would be written, don't write")
     args = parser.parse_args()
 
@@ -414,6 +416,19 @@ def main() -> None:
     url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={tab['sheetId']}"
     log(f"Wrote {len(rows) - 3} scouts to {tab['title']!r}: {url}")
     print(url)
+
+    # The Den Report's counts are live formulas on this tab, but its set of den
+    # rows is fixed when written. Refresh it every sync so a new, removed or
+    # renamed den never leaves the report stale.
+    if not args.no_den_report:
+        import subprocess
+        cmd = [sys.executable, str(Path(__file__).with_name("den_report.py")),
+               "--sheet", spreadsheet_id]
+        if not dues:
+            cmd.append("--no-dues")
+        if subprocess.run(cmd).returncode != 0:
+            log("Den Report refresh failed; rerun den_report.py")
+            sys.exit(4)
 
 
 if __name__ == "__main__":

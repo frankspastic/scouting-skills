@@ -195,6 +195,12 @@ default, so repeat questions don't reopen the browser.
    said this may change). `--tab <name>` targets a specific tab if the
    default (the URL's `gid`, or the first tab) isn't the right one.
 
+   **The Den Report is refreshed automatically after every sync.** Its counts
+   are live formulas on this tab, but its set of den rows is fixed when
+   written, so the sync reruns `den_report.py` (same spreadsheet) at the end so
+   the report always follows the roster tab. `--no-den-report` skips that.
+   Nobody needs to remember a separate step.
+
    This writes real data into a document other people may have open —
    mention what's about to happen before running it the first time in a
    session, same as any other real-world-effect action. Use `--dry-run` to
