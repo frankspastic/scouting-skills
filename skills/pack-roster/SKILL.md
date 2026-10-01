@@ -195,9 +195,9 @@ default, so repeat questions don't reopen the browser.
    said this may change). `--tab <name>` targets a specific tab if the
    default (the URL's `gid`, or the first tab) isn't the right one.
 
-   The **Registration Expires** column is color-coded by conditional-format
+   The **Dues Paid** (red No, green Yes) and **Registration Expires** columns are color-coded by conditional-format
    rules the sync installs (replacing any earlier ones, found by header):
-   red = date in the past, yellow = within the next month, green = later.
+   Expires: red = date in the past, yellow = within the next month, green = later.
    Blank cells (paid-but-unregistered scouts) stay uncolored. The rules live in
    the sheet, so they recolor themselves as dates pass.
 

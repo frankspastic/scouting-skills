@@ -293,13 +293,15 @@ def resolve_target_tab(service, spreadsheet_id: str, gid: int | None, tab_name: 
 
 def expiry_color_requests(service, spreadsheet_id: str, sheet_id: int,
                           header: list[str]) -> list[dict]:
-    """Conditional formatting for the Registration Expires column: red when the
+    """Conditional formatting for the sheet's color-coded columns. Dues Paid:
+    red for No, green for Yes. Registration Expires: red when the
     date has passed, yellow when it is within the next month, green otherwise.
-    Blank cells (paid-but-unregistered scouts) stay uncolored. Rules live in the
+    This owns every rule on the tab (all are replaced each run). Blank cells (paid-but-unregistered scouts) stay uncolored. Rules live in the
     sheet, so they recolor themselves as time passes; the column is found by
     header, and any earlier rules on the tab are replaced rather than stacked."""
     col = header.index("Registration Expires")
     letter = chr(ord("A") + col)
+    dues_col = header.index(DUES_COLUMN) if DUES_COLUMN in header else None
     meta = service.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
         fields="sheets(properties.sheetId,conditionalFormats)").execute()
@@ -323,6 +325,19 @@ def expiry_color_requests(service, spreadsheet_id: str, sheet_id: int,
                 "condition": {"type": "CUSTOM_FORMULA", "values": [{"userEnteredValue": formula}]},
                 "format": {"backgroundColor": {"red": r, "green": g, "blue": b}},
             }}}})
+    if dues_col is not None:
+        dl = chr(ord("A") + dues_col)
+        drng = {"sheetId": sheet_id, "startRowIndex": 3, "startColumnIndex": dues_col,
+                "endColumnIndex": dues_col + 1}
+        for i, (value, (r, g, b)) in enumerate([("No", (0.96, 0.62, 0.62)),
+                                                ("Yes", (0.62, 0.84, 0.62))], start=len(rules)):
+            reqs.append({"addConditionalFormatRule": {"index": i, "rule": {
+                "ranges": [drng],
+                "booleanRule": {
+                    "condition": {"type": "CUSTOM_FORMULA",
+                                  "values": [{"userEnteredValue": f'={dl}4="{value}"'}]},
+                    "format": {"backgroundColor": {"red": r, "green": g, "blue": b}},
+                }}}})
     return reqs
 
 
