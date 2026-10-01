@@ -291,6 +291,41 @@ def resolve_target_tab(service, spreadsheet_id: str, gid: int | None, tab_name: 
     return sheets[0]
 
 
+def expiry_color_requests(service, spreadsheet_id: str, sheet_id: int,
+                          header: list[str]) -> list[dict]:
+    """Conditional formatting for the Registration Expires column: red when the
+    date has passed, yellow when it is within the next month, green otherwise.
+    Blank cells (paid-but-unregistered scouts) stay uncolored. Rules live in the
+    sheet, so they recolor themselves as time passes; the column is found by
+    header, and any earlier rules on the tab are replaced rather than stacked."""
+    col = header.index("Registration Expires")
+    letter = chr(ord("A") + col)
+    meta = service.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        fields="sheets(properties.sheetId,conditionalFormats)").execute()
+    existing = next((sh.get("conditionalFormats", []) for sh in meta["sheets"]
+                     if sh["properties"]["sheetId"] == sheet_id), [])
+    reqs = [{"deleteConditionalFormatRule": {"sheetId": sheet_id, "index": 0}}
+            for _ in existing]
+    rng = {"sheetId": sheet_id, "startRowIndex": 3, "startColumnIndex": col,
+           "endColumnIndex": col + 1}
+    # Cells may hold true dates or ISO text, depending on how Sheets parsed them.
+    d = f'IF(ISNUMBER({letter}4),{letter}4,DATEVALUE({letter}4))'
+    rules = [
+        (f'=AND({letter}4<>"",{d}<TODAY())', (0.96, 0.62, 0.62)),
+        (f'=AND({letter}4<>"",{d}>=TODAY(),{d}<=EDATE(TODAY(),1))', (1.0, 0.90, 0.45)),
+        (f'=AND({letter}4<>"",{d}>EDATE(TODAY(),1))', (0.62, 0.84, 0.62)),
+    ]
+    for i, (formula, (r, g, b)) in enumerate(rules):
+        reqs.append({"addConditionalFormatRule": {"index": i, "rule": {
+            "ranges": [rng],
+            "booleanRule": {
+                "condition": {"type": "CUSTOM_FORMULA", "values": [{"userEnteredValue": formula}]},
+                "format": {"backgroundColor": {"red": r, "green": g, "blue": b}},
+            }}}})
+    return reqs
+
+
 def write_roster(service, spreadsheet_id: str, tab: dict, rows: list[list],
                  header: list[str]) -> None:
     title = tab["title"]
@@ -309,6 +344,7 @@ def write_roster(service, spreadsheet_id: str, tab: dict, rows: list[list],
     service.spreadsheets().batchUpdate(
         spreadsheetId=spreadsheet_id,
         body={"requests": [
+            *expiry_color_requests(service, spreadsheet_id, sheet_id, header),
             {"repeatCell": {
                 "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1},
                 "cell": {"userEnteredFormat": bold}, "fields": "userEnteredFormat.textFormat.bold",
