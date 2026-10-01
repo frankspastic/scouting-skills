@@ -195,11 +195,12 @@ default, so repeat questions don't reopen the browser.
    said this may change). `--tab <name>` targets a specific tab if the
    default (the URL's `gid`, or the first tab) isn't the right one.
 
-   The **Dues Paid** (red No, green Yes) and **Registration Expires** columns are color-coded by conditional-format
-   rules the sync installs (replacing any earlier ones, found by header):
-   Expires: red = date in the past, yellow = within the next month, green = later.
-   Blank cells (paid-but-unregistered scouts) stay uncolored. The rules live in
-   the sheet, so they recolor themselves as dates pass.
+   The **Dues Paid** (red No, green Yes) and **Renewal Status** columns are
+   color-coded by conditional-format rules the sync installs (replacing any
+   earlier ones, found by header): Renewal Status is yellow for Eligible to
+   Renew (including "unit only"), red for Not Registered, green for Current and
+   Renewed; Opted Out and blank stay plain. Registration Expires is
+   deliberately uncolored. The rules live in the sheet.
 
    **The Den Report is refreshed automatically after every sync.** Its counts
    are live formulas on this tab, but its set of den rows is fixed when

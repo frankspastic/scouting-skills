@@ -291,17 +291,14 @@ def resolve_target_tab(service, spreadsheet_id: str, gid: int | None, tab_name: 
     return sheets[0]
 
 
-def expiry_color_requests(service, spreadsheet_id: str, sheet_id: int,
+def status_color_requests(service, spreadsheet_id: str, sheet_id: int,
                           header: list[str]) -> list[dict]:
     """Conditional formatting for the sheet's color-coded columns. Dues Paid:
-    red for No, green for Yes. Registration Expires: red when the
-    date has passed, yellow when it is within the next month, green otherwise.
-    This owns every rule on the tab (all are replaced each run). Blank cells (paid-but-unregistered scouts) stay uncolored. Rules live in the
-    sheet, so they recolor themselves as time passes; the column is found by
-    header, and any earlier rules on the tab are replaced rather than stacked."""
-    col = header.index("Registration Expires")
-    letter = chr(ord("A") + col)
-    dues_col = header.index(DUES_COLUMN) if DUES_COLUMN in header else None
+    red for No, green for Yes. Renewal Status: yellow for any "Eligible to
+    Renew" (including "(unit only)"), red for Not Registered, green for Current and
+    Renewed; Opted Out and blank stay uncolored. This owns every rule on the tab
+    (all are replaced each run), and finds columns by header, so the rules
+    follow the sheet's layout."""
     meta = service.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
         fields="sheets(properties.sheetId,conditionalFormats)").execute()
@@ -309,35 +306,27 @@ def expiry_color_requests(service, spreadsheet_id: str, sheet_id: int,
                      if sh["properties"]["sheetId"] == sheet_id), [])
     reqs = [{"deleteConditionalFormatRule": {"sheetId": sheet_id, "index": 0}}
             for _ in existing]
-    rng = {"sheetId": sheet_id, "startRowIndex": 3, "startColumnIndex": col,
-           "endColumnIndex": col + 1}
-    # Cells may hold true dates or ISO text, depending on how Sheets parsed them.
-    d = f'IF(ISNUMBER({letter}4),{letter}4,DATEVALUE({letter}4))'
-    rules = [
-        (f'=AND({letter}4<>"",{d}<TODAY())', (0.96, 0.62, 0.62)),
-        (f'=AND({letter}4<>"",{d}>=TODAY(),{d}<=EDATE(TODAY(),1))', (1.0, 0.90, 0.45)),
-        (f'=AND({letter}4<>"",{d}>EDATE(TODAY(),1))', (0.62, 0.84, 0.62)),
-    ]
-    for i, (formula, (r, g, b)) in enumerate(rules):
+    red, yellow, green = (0.96, 0.62, 0.62), (1.0, 0.90, 0.45), (0.62, 0.84, 0.62)
+    rules = []  # (column name, formula using {c} for the column letter, color)
+    if DUES_COLUMN in header:
+        rules += [(DUES_COLUMN, '={c}4="No"', red), (DUES_COLUMN, '={c}4="Yes"', green)]
+    if "Renewal Status" in header:
+        rules += [
+            ("Renewal Status", '=LEFT({c}4,17)="Eligible to Renew"', yellow),
+            ("Renewal Status", '={c}4="Not Registered"', red),
+            ("Renewal Status", '={c}4="Current"', green),
+            ("Renewal Status", '={c}4="Renewed"', green),
+        ]
+    for i, (name, formula, (r, g, b)) in enumerate(rules):
+        col = header.index(name)
         reqs.append({"addConditionalFormatRule": {"index": i, "rule": {
-            "ranges": [rng],
+            "ranges": [{"sheetId": sheet_id, "startRowIndex": 3, "startColumnIndex": col,
+                        "endColumnIndex": col + 1}],
             "booleanRule": {
-                "condition": {"type": "CUSTOM_FORMULA", "values": [{"userEnteredValue": formula}]},
+                "condition": {"type": "CUSTOM_FORMULA", "values": [{
+                    "userEnteredValue": formula.format(c=chr(ord("A") + col))}]},
                 "format": {"backgroundColor": {"red": r, "green": g, "blue": b}},
             }}}})
-    if dues_col is not None:
-        dl = chr(ord("A") + dues_col)
-        drng = {"sheetId": sheet_id, "startRowIndex": 3, "startColumnIndex": dues_col,
-                "endColumnIndex": dues_col + 1}
-        for i, (value, (r, g, b)) in enumerate([("No", (0.96, 0.62, 0.62)),
-                                                ("Yes", (0.62, 0.84, 0.62))], start=len(rules)):
-            reqs.append({"addConditionalFormatRule": {"index": i, "rule": {
-                "ranges": [drng],
-                "booleanRule": {
-                    "condition": {"type": "CUSTOM_FORMULA",
-                                  "values": [{"userEnteredValue": f'={dl}4="{value}"'}]},
-                    "format": {"backgroundColor": {"red": r, "green": g, "blue": b}},
-                }}}})
     return reqs
 
 
@@ -359,7 +348,7 @@ def write_roster(service, spreadsheet_id: str, tab: dict, rows: list[list],
     service.spreadsheets().batchUpdate(
         spreadsheetId=spreadsheet_id,
         body={"requests": [
-            *expiry_color_requests(service, spreadsheet_id, sheet_id, header),
+            *status_color_requests(service, spreadsheet_id, sheet_id, header),
             {"repeatCell": {
                 "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1},
                 "cell": {"userEnteredFormat": bold}, "fields": "userEnteredFormat.textFormat.bold",
