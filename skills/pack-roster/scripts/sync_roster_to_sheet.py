@@ -68,6 +68,13 @@ HEADER = [
     "Parent/Guardian Names", "Parent Emails", "Parent Phones",
 ]
 
+ADULTS_TAB = "Adult Leaders"
+ADULT_HEADER = [
+    "First Name", "Last Name", "Positions", "Den", "Email", "Phone",
+    "YPT Status", "YPT Expires", "Untrained Positions",
+    "Registration Expires", "Renewal Status", "BSA ID",
+]
+
 
 def log(msg: str) -> None:
     print(f"[sync_roster_to_sheet] {msg}", file=sys.stderr, flush=True)
@@ -273,6 +280,37 @@ def build_rows(roster: dict, dues: dict | None) -> tuple[list[list], list[str]]:
     return [[title], [], header, *rows], header
 
 
+def build_adult_rows(roster: dict) -> list[list]:
+    """The Adult Leaders tab: one row per registered adult, in the order
+    fetch_roster.py sorted them (pack leadership first)."""
+    rows = [[
+        a["first_name"], a["last_name"], "; ".join(a["positions"]),
+        "; ".join(a["dens"]), a["email"], a["phone"],
+        a["ypt_status"], a["ypt_expires"], "; ".join(a["untrained_positions"]),
+        a["registration_expire"], a["renewal_status"], a["bsa_id"],
+    ] for a in roster.get("adults") or []]
+    title = f"Adult Leaders — updated {roster.get('fetched_at', '')}"
+    return [[title], [], ADULT_HEADER, *rows]
+
+
+def resolve_or_create_tab(service, spreadsheet_id: str, tab_name: str) -> dict:
+    meta = service.spreadsheets().get(
+        spreadsheetId=spreadsheet_id, fields="sheets.properties"
+    ).execute()
+    for sheet in meta["sheets"]:
+        if sheet["properties"]["title"] == tab_name:
+            return sheet["properties"]
+    # Appended last: den_report.py reads the roster from the lowest-index
+    # tab, so a new tab must never land in front of it.
+    log(f"Tab {tab_name!r} not found; creating it.")
+    resp = service.spreadsheets().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body={"requests": [{"addSheet": {"properties": {
+            "title": tab_name, "index": len(meta["sheets"])}}}]},
+    ).execute()
+    return resp["replies"][0]["addSheet"]["properties"]
+
+
 def resolve_target_tab(service, spreadsheet_id: str, gid: int | None, tab_name: str | None) -> dict:
     meta = service.spreadsheets().get(
         spreadsheetId=spreadsheet_id, fields="sheets.properties"
@@ -296,7 +334,9 @@ def status_color_requests(service, spreadsheet_id: str, sheet_id: int,
     """Conditional formatting for the sheet's color-coded columns. Dues Paid:
     red for No, green for Yes. Renewal Status: yellow for any "Eligible to
     Renew" (including "(unit only)"), red for Not Registered, green for Current and
-    Renewed; Opted Out and blank stay uncolored. This owns every rule on the tab
+    Renewed; Opted Out and blank stay uncolored. On the Adult Leaders tab, YPT
+    Status is red for Expired, yellow for "Expires …", green for ACTIVE, and
+    an Expired renewal status is red. This owns every rule on the tab
     (all are replaced each run), and finds columns by header, so the rules
     follow the sheet's layout."""
     meta = service.spreadsheets().get(
@@ -317,6 +357,17 @@ def status_color_requests(service, spreadsheet_id: str, sheet_id: int,
             ("Renewal Status", '={c}4="Current"', green),
             ("Renewal Status", '={c}4="Renewed"', green),
         ]
+    if "YPT Status" in header:
+        # Scoutbook reports ACTIVE, Expired, or an "Expires 1-30d"-style window.
+        rules += [
+            ("YPT Status", '={c}4="Expired"', red),
+            ("YPT Status", '=LEFT({c}4,7)="Expires"', yellow),
+            ("YPT Status", '={c}4="ACTIVE"', green),
+        ]
+    if "Renewal Status" in header and "Positions" in header:
+        # A leader whose registration has lapsed — only possible on the
+        # Adult Leaders tab, where lapsed adults still hold a position.
+        rules.append(("Renewal Status", '={c}4="Expired"', red))
     for i, (name, formula, (r, g, b)) in enumerate(rules):
         col = header.index(name)
         reqs.append({"addConditionalFormatRule": {"index": i, "rule": {
@@ -402,6 +453,10 @@ def main() -> None:
                              "(default: DUES_SHEET_ID config)")
     parser.add_argument("--no-dues", action="store_true",
                         help=f"Skip the {DUES_COLUMN!r} column even if a dues sheet is configured")
+    parser.add_argument("--adults-tab", default=ADULTS_TAB,
+                        help=f"Tab for registered adult leaders, created if missing (default {ADULTS_TAB!r})")
+    parser.add_argument("--no-adults", action="store_true",
+                        help="Don't write the adult leaders tab")
     parser.add_argument("--no-den-report", action="store_true",
                         help="Don't refresh the Den Report tab's den rows and charts afterwards")
     parser.add_argument("--dry-run", action="store_true", help="Print what would be written, don't write")
@@ -436,11 +491,22 @@ def main() -> None:
             f"{fetch_dues.sources_label(dues)}")
 
     rows, header = build_rows(roster, dues)
+    adult_rows = None
+    if not args.no_adults:
+        if "adults" in roster:
+            adult_rows = build_adult_rows(roster)
+        else:
+            log("roster.json has no adult leader data (cached before it was collected); "
+                "rerun fetch_roster.py to fill the adult leaders tab.")
 
     if args.dry_run:
         log(f"Would write {len(rows) - 3} scouts to spreadsheet {spreadsheet_id}")
         for row in rows:
             print("\t".join(str(c) for c in row))
+        if adult_rows:
+            log(f"Would write {len(adult_rows) - 3} adults to tab {args.adults_tab!r}")
+            for row in adult_rows:
+                print("\t".join(str(c) for c in row))
         return
 
     if service is None:
@@ -456,6 +522,16 @@ def main() -> None:
     url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={tab['sheetId']}"
     log(f"Wrote {len(rows) - 3} scouts to {tab['title']!r}: {url}")
     print(url)
+
+    if adult_rows:
+        try:
+            adults_tab = resolve_or_create_tab(service, spreadsheet_id, args.adults_tab)
+            write_roster(service, spreadsheet_id, adults_tab, adult_rows, ADULT_HEADER)
+        except HttpError as e:
+            log(f"Google Sheets API error writing {args.adults_tab!r}: {e}")
+            sys.exit(4)
+        log(f"Wrote {len(adult_rows) - 3} adult leaders to {adults_tab['title']!r}: "
+            f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={adults_tab['sheetId']}")
 
     # The Den Report's counts are live formulas on this tab, but its set of den
     # rows is fixed when written. Refresh it every sync so a new, removed or
