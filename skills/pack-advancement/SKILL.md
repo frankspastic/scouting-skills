@@ -10,7 +10,47 @@ Report Builder custom report) from Scoutbook Plus, joins it with the pack
 roster to know each scout's den, and reports rank/adventure completion
 per den.
 
-## How it works
+## Per-den progress (preferred for one den)
+
+For one den's progress toward its rank ("how's Webelos den doing?", "who
+still needs My Family?"), skip the custom report and use the Scoutbook Plus
+youth profiles directly. These carry real adventure names, partial progress
+(percent complete), and approval dates, and you never need to open Custom
+Reports:
+
+```bash
+uv run scripts/fetch_den_advancement.py --den "Webelos Den 7"   # --force for fresh
+uv run scripts/den_progress.py --den "Webelos Den 7"            # prints markdown
+```
+
+- The den name must match `roster.json`'s `den` field exactly. Run
+  `pack-roster`'s `fetch_roster.py` first. It saves the unit youth list in
+  `~/.scouting-skills/raw/`, which maps member IDs to the Scoutbook user
+  IDs the profile pages need.
+- It opens `advancements.scouting.org/youthProfile/<userId>` for each scout
+  and records the JSON the page loads (`youth/<id>/ranks`,
+  `youth/<id>/adventures`, `youth/<id>/ranks/<rankId>/requirements`, and the
+  adventure catalog). It never calls the API or handles tokens itself.
+  About 5 seconds per scout.
+- Output: `~/.scouting-skills/den-advancement/<den-slug>.json`, cached for
+  24 hours.
+- `den_progress.py` prints a summary (rank status, required n/6, electives
+  n/2) and an adventure-by-scout table. Show its output as is; add
+  observations (e.g. who's missing a requirement) below it. `--initials`
+  shortens the column headers.
+- Each scout's `adventures` list only includes adventures they've *started*.
+  Rows for unstarted required adventures come from the rank's requirement
+  list. Cells always come from `adventures`, because the rank-requirements
+  response sometimes comes back empty for a scout and never shows partial
+  progress.
+- After visiting the profiles, the script goes back to `/roster` and checks
+  that the pack roster still loads. If it logs a WARNING, Scoutbook Plus has
+  switched this browser to a single scout's view (seen once after opening a
+  leader's own child's profile). Ask the user to switch back to their pack
+  leader role in that browser window before running `fetch_roster.py`.
+  Otherwise the roster fetch only sees a handful of people.
+
+## How it works (full pack custom report)
 
 Custom reports (Custom Reports → My Reports on the Reports page) live in
 the *legacy* Scoutbook report system (`reportspd.scouting.org`), separate
@@ -165,5 +205,8 @@ default.
   `reference/required_adventures.json` still matches
   `catalog.adventures[rank]` exactly (BSA occasionally renames an
   adventure); update the spelling there if a required row isn't bolding.
-- **Stale-looking data** — check `fetched_at` on both `advancement.json`
-  and `roster.json`; rerun either fetch with `--force`.
+- **Stale-looking data**: check `fetched_at` on both `advancement.json`
+  and `roster.json`, and rerun either fetch with `--force`.
+- **Custom report has only "Req #1a…" rows, no adventure names** (seen
+  2026-10): the saved report's layout changed and `parse_matrix()`
+  misfiles the data. Use the per-den scripts above instead.
