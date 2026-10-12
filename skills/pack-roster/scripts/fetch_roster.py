@@ -285,6 +285,104 @@ def _merge_registration_info(scouts: list[dict], captures: list[dict], sources: 
             s["gender"] = info.get("gender", "")
 
 
+# Display order for adult positions: Key 3 and pack leadership first, then
+# den-level, then committee and reserve roles. Unlisted positions sort last.
+POSITION_ORDER = (
+    "Cubmaster", "Assistant Cubmaster", "Committee Chair", "Executive Officer",
+    "Key 3 Delegate", "Chartered Organization Rep.", "Unit Treasurer",
+    "Unit Advancement Chair", "New Member Coordinator", "Den Leader",
+    "Assistant Den Leader", "Lion Guide", "Committee Member",
+    "Council Unit Representative", "Unit Scouter Reserve",
+)
+
+
+def _position_rank(position: str) -> int:
+    return POSITION_ORDER.index(position) if position in POSITION_ORDER else len(POSITION_ORDER)
+
+
+def extract_adult_leaders(captures: list[dict]) -> tuple[list[dict], list[str]]:
+    """Registered adult leaders, one entry per person, from
+    /organizations/v2/{guid}/orgAdults (positions, YPT, registration) joined
+    by personGuid with /units/{guid}/adults (contact info, den assignments)
+    and, for adults missing there, /units/{guid}/parents.
+
+    orgAdults has one record per position per membership year, and keeps the
+    superseded year's records with isManuallyEnded == true (same pattern as
+    orgYouths). Only live records count, so an adult whose every record is
+    ended — someone who has left the pack — is dropped.
+    """
+    org_cap = units_cap = parents_cap = None
+    for cap in captures:
+        url = cap["url"].lower()
+        if re.search(r"/organizations/v2/[^/]+/orgadults", url):
+            org_cap = cap
+        elif re.search(r"/units/[^/]+/adults", url):
+            units_cap = cap
+        elif re.search(r"/units/[^/]+/parents", url):
+            parents_cap = cap
+    if not org_cap:
+        return [], []
+
+    contacts: dict = {}
+    if parents_cap and isinstance(parents_cap["body"], list):
+        for link in parents_cap["body"]:
+            info = link.get("parentInformation") or {}
+            contacts[info.get("personGuid")] = info
+    dens_by_guid: dict = {}
+    unit_adults = ((units_cap["body"] or {}).get("users") or []) if units_cap else []
+    for u in unit_adults:
+        contacts[u.get("personGuid")] = u  # unit adults win over parents
+        dens_by_guid[u.get("personGuid")] = sorted({
+            _den_from_positions([p]) for p in u.get("positions") or []
+            if p.get("position") == "Den Leader" and (p.get("denType") or p.get("denNumber"))
+        })
+
+    people: dict = {}
+    for m in (org_cap["body"] or {}).get("members") or []:
+        reg = m.get("registrarInfo") or {}
+        if reg.get("isManuallyEnded"):
+            continue
+        guid = m.get("personGuid")
+        person = people.setdefault(guid, {
+            "first_name": m.get("firstName") or "",
+            "last_name": m.get("lastName") or "",
+            "bsa_id": str(m.get("memberId") or ""),
+            "positions": [],
+            "untrained_positions": [],
+            "ypt_status": m.get("yptStatus") or "",
+            "ypt_expires": m.get("yptExpiredDate") or "",
+            "_reg": {},
+        })
+        position = m.get("position") or ""
+        if position and position not in person["positions"]:
+            person["positions"].append(position)
+            if (m.get("positionTrained") or "").lower() != "trained":
+                person["untrained_positions"].append(position)
+        # An adult's positions can be on different registrations; report the
+        # one that runs latest.
+        if (reg.get("registrationExpireDt") or "") >= (person["_reg"].get("registrationExpireDt") or ""):
+            person["_reg"] = reg
+
+    adults = []
+    for guid, person in people.items():
+        reg = person.pop("_reg")
+        contact = contacts.get(guid) or {}
+        person["positions"].sort(key=_position_rank)
+        person["untrained_positions"].sort(key=_position_rank)
+        person["dens"] = dens_by_guid.get(guid, [])
+        person["email"] = contact.get("email") or ""
+        person["phone"] = (contact.get("mobilePhone") or contact.get("homePhone")
+                           or contact.get("workPhone") or "")
+        person["registration_expire"] = reg.get("registrationExpireDt") or ""
+        person["registration_status"] = reg.get("registrationStatus") or ""
+        person["renewal_status"] = reg.get("renewalStatus") or ""
+        adults.append(person)
+    adults.sort(key=lambda a: (_position_rank(a["positions"][0]) if a["positions"] else 99,
+                               a["last_name"], a["first_name"]))
+    sources = [c["url"] for c in (org_cap, units_cap, parents_cap) if c]
+    return adults, sources
+
+
 def extract_roster(captures: list[dict]) -> tuple[list[dict], list[str]]:
     """Extract the roster, preferring the known unit endpoints and falling
     back to a generic person-list heuristic (in case the API changes or a
@@ -327,13 +425,16 @@ def extract_roster(captures: list[dict]) -> tuple[list[dict], list[str]]:
 # Output
 # ---------------------------------------------------------------------------
 
-def write_outputs(scouts: list[dict], sources: list[str], data_dir: Path) -> None:
+def write_outputs(scouts: list[dict], sources: list[str], data_dir: Path,
+                  adults: list[dict], fetched_at: str) -> None:
     roster = {
-        "fetched_at": now_iso(),
+        "fetched_at": fetched_at,
         "source": "advancements.scouting.org",
         "source_urls": sources,
         "scout_count": len(scouts),
         "scouts": sorted(scouts, key=lambda s: (s["den"], s["last_name"], s["first_name"])),
+        "adult_count": len(adults),
+        "adults": adults,
     }
     (data_dir / "roster.json").write_text(json.dumps(roster, indent=2))
 
@@ -358,7 +459,8 @@ def write_outputs(scouts: list[dict], sources: list[str], data_dir: Path) -> Non
                         s.get("is_expired", False),
                         s.get("renewal_status", ""), parents])
 
-    log(f"Wrote {len(scouts)} scouts to {data_dir / 'roster.json'} and {data_dir / 'roster.csv'}")
+    log(f"Wrote {len(scouts)} scouts and {len(adults)} adult leaders to "
+        f"{data_dir / 'roster.json'} and {data_dir / 'roster.csv'}")
 
 
 def save_raw_captures(captures: list[dict], raw_dir: Path) -> None:
@@ -505,10 +607,17 @@ def main() -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     roster_json = data_dir / "roster.json"
 
+    fetched_at = now_iso()
     if args.from_raw:
-        captures = [json.loads(f.read_text())
-                    for f in sorted((data_dir / "raw").glob("*.json"))]
+        raw_files = sorted((data_dir / "raw").glob("*.json"))
+        captures = [json.loads(f.read_text()) for f in raw_files]
         log(f"Loaded {len(captures)} raw captures from {data_dir / 'raw'}/")
+        # Re-parsing old captures doesn't make the data any newer; keep the
+        # capture time so the cache-age check and sheet title stay honest.
+        if raw_files:
+            fetched_at = datetime.fromtimestamp(
+                max(f.stat().st_mtime for f in raw_files), timezone.utc
+            ).isoformat(timespec="seconds")
     elif not args.force and cache_is_fresh(roster_json, args.max_age_hours):
         print(roster_json)
         return
@@ -521,7 +630,12 @@ def main() -> None:
             "site returned, then improve extract_roster()/normalize_person().")
         sys.exit(3)
 
-    write_outputs(scouts, sources, data_dir)
+    adults, adult_sources = extract_adult_leaders(captures)
+    if not adults:
+        log("No adult leader data (orgAdults) captured this run; roster.json will "
+            "have an empty adults list.")
+    write_outputs(scouts, sources + [u for u in adult_sources if u not in sources],
+                  data_dir, adults, fetched_at)
     print(roster_json)
 
 

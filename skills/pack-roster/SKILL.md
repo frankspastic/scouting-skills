@@ -52,9 +52,31 @@ default, so repeat questions don't reopen the browser.
         "renewal_status": "Current", "is_expired": false,
         "parents": [{"name": "…", "relationship": "Parent/Guardian",
                      "email": "…", "phone": "…"}]}
+     ],
+     "adult_count": 23,
+     "adults": [
+       {"first_name": "…", "last_name": "…", "bsa_id": "…",
+        "positions": ["Cubmaster", "Key 3 Delegate"],
+        "untrained_positions": ["Key 3 Delegate"],
+        "dens": ["Webelos Den 7"], "email": "…", "phone": "…",
+        "ypt_status": "ACTIVE", "ypt_expires": "2027-05-23",
+        "registration_expire": "2027-08-31", "registration_status": "Re-Registered",
+        "renewal_status": "Current"}
      ]
    }
    ```
+
+   `adults` are the registered adult leaders, one per person, from the
+   `orgAdults` endpoint (positions, position-trained, YPT, registration)
+   joined by person with the unit `/adults` endpoint (contact info, dens) and,
+   failing that, `/parents`. `orgAdults` keeps each superseded year's position
+   records marked ended; only live ones count, so someone who has left the
+   pack drops out. `dens` only lists dens attached to a **Den Leader**
+   position in Scoutbook — most den leaders have none there, so a blank is
+   normal, not a sign they have no den (Scoutbook's "Den Admin" access is
+   deliberately not used for this; it's a permission, not a role). Sorted with
+   pack leadership first. Use this for "who are our leaders", "whose YPT is
+   lapsing", "who still needs position training".
 
    `gender` is `M`/`F` (or `""` when the API has none on file) and comes
    from the same unit `/youths` endpoint as den, rank and parents.
@@ -194,6 +216,30 @@ default, so repeat questions don't reopen the browser.
    or edit that env file to change the default going forward (the user has
    said this may change). `--tab <name>` targets a specific tab if the
    default (the URL's `gid`, or the first tab) isn't the right one.
+
+   The **Dues Paid** (red No, green Yes) and **Renewal Status** columns are
+   color-coded by conditional-format rules the sync installs (replacing any
+   earlier ones, found by header): Renewal Status is yellow for Eligible to
+   Renew (including "unit only"), red for Not Registered, green for Current and
+   Renewed; Opted Out and blank stay plain. Registration Expires is
+   deliberately uncolored. The rules live in the sheet.
+
+   **Adult leaders go to their own tab**, `Adult Leaders` (created at the end
+   of the spreadsheet if missing, so it never displaces the roster tab the
+   Den Report reads from; `--adults-tab` renames it, `--no-adults` skips it).
+   One row per adult: positions, den, email, phone, YPT status/expiry,
+   untrained positions, registration expiry, renewal status, BSA ID. YPT
+   Status is red for Expired, yellow for "Expires …", green for ACTIVE;
+   Renewal Status is colored as on the roster, plus red for Expired. A
+   `roster.json` cached before adults were collected has no `adults` key —
+   the sync says so and skips the tab; `fetch_roster.py --from-raw` rebuilds
+   it from the saved captures without a browser, keeping the capture time.
+
+   **The Den Report is refreshed automatically after every sync.** Its counts
+   are live formulas on this tab, but its set of den rows is fixed when
+   written, so the sync reruns `den_report.py` (same spreadsheet) at the end so
+   the report always follows the roster tab. `--no-den-report` skips that.
+   Nobody needs to remember a separate step.
 
    This writes real data into a document other people may have open —
    mention what's about to happen before running it the first time in a
