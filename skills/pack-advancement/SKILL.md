@@ -43,8 +43,15 @@ uv run scripts/den_progress.py --den "Webelos Den 7"            # prints markdow
   `uv run scripts/den_progress_to_sheet.py --den "<den>" --sheet <id or URL>`.
   It uses pack-roster's saved Google Sheets login and creates the tab
   ("<Rank> Advancement" by default). On reruns, pass `--replace`. Without
-  it, the script won't overwrite an existing tab. Webelos Den 7's grid lives
-  in the "2026-2027 Webelos Plan" sheet, which is shared with families.
+  it, the script won't overwrite an existing tab. Add `--plan-tab Plan` to
+  take the rows from a den plan tab (its "Meeting" column plus any
+  "Adventure..." columns), in plan order with a Meeting column. Planned
+  names are matched loosely ("Race Time - Webelos" matches "Race Time
+  (Webelos)", "Bobcat" matches "Bobcat (Webelos)"). Anything Scoutbook doesn't
+  track (e.g. America250) is listed as "Not in Scoutbook". Required
+  adventures missing from the plan are added at the end. Webelos Den 7's
+  grid lives in the "2026-2027 Webelos Plan" sheet, which is shared with
+  families. Refresh it with `--plan-tab Plan --replace`.
 - Each scout's `adventures` list only includes adventures they've *started*.
   Rows for unstarted required adventures come from the rank's requirement
   list. Cells always come from `adventures`, because the rank-requirements
