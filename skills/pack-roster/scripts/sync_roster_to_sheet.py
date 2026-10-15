@@ -80,6 +80,13 @@ def log(msg: str) -> None:
     print(f"[sync_roster_to_sheet] {msg}", file=sys.stderr, flush=True)
 
 
+def quote_tab(title: str) -> str:
+    """A tab name as A1 notation needs it: single-quoted, with any apostrophe
+    inside doubled. The roster tab is called "Don't Edit", and the unescaped
+    form breaks every formula that references it with #ERROR!."""
+    return "'" + title.replace("'", "''") + "'"
+
+
 def load_config_file() -> None:
     if not ENV_FILE.exists():
         return
@@ -388,10 +395,10 @@ def write_roster(service, spreadsheet_id: str, tab: dict, rows: list[list],
     n_cols = max(len(header), 1)
 
     service.spreadsheets().values().clear(
-        spreadsheetId=spreadsheet_id, range=f"'{title}'"
+        spreadsheetId=spreadsheet_id, range=quote_tab(title)
     ).execute()
     service.spreadsheets().values().update(
-        spreadsheetId=spreadsheet_id, range=f"'{title}'!A1",
+        spreadsheetId=spreadsheet_id, range=f"{quote_tab(title)}!A1",
         valueInputOption="USER_ENTERED", body={"values": rows},
     ).execute()
 

@@ -485,7 +485,9 @@ def fetch_dues(service, specs: list[dict], tab_name: str | None = None) -> dict:
     for spec in specs:
         tab = resolve_target_tab(service, spec["id"], spec["gid"], tab_name)
         values = service.spreadsheets().values().get(
-            spreadsheetId=spec["id"], range=f"'{tab['title']}'",
+            # Apostrophes doubled, as in sync_roster_to_sheet.quote_tab (which
+            # imports this module, so it can't be imported from here).
+            spreadsheetId=spec["id"], range="'" + tab["title"].replace("'", "''") + "'",
         ).execute().get("values", [])
         subs, pays = parse_payments(values)
         label = tab["spreadsheet_title"]
