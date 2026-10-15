@@ -38,6 +38,13 @@ uv run scripts/den_progress.py --den "Webelos Den 7"            # prints markdow
   n/2) and an adventure-by-scout table. Show its output as is; add
   observations (e.g. who's missing a requirement) below it. `--initials`
   shortens the column headers.
+- `--status-words` makes the cells say Complete / Incomplete / Not Started.
+  To put that grid in a Google Sheet tab, run
+  `uv run scripts/den_progress_to_sheet.py --den "<den>" --sheet <id or URL>`.
+  It uses pack-roster's saved Google Sheets login and creates the tab
+  ("<Rank> Advancement" by default). On reruns, pass `--replace`. Without
+  it, the script won't overwrite an existing tab. Webelos Den 7's grid lives
+  in the "2026-2027 Webelos Plan" sheet, which is shared with families.
 - Each scout's `adventures` list only includes adventures they've *started*.
   Rows for unstarted required adventures come from the rank's requirement
   list. Cells always come from `adventures`, because the rank-requirements

@@ -22,6 +22,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 
@@ -63,25 +64,8 @@ def label(s: dict, initials: bool) -> str:
     return f"{s['first_name']} {s['last_name'][:1]}." if initials else s["name"]
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--den", required=True)
-    ap.add_argument("--initials", action="store_true",
-                    help='column headers as "First L." instead of full names')
-    ap.add_argument("--status-words", action="store_true",
-                    help='cells say "Complete" / "Incomplete" / "Not Started" '
-                         'instead of dates and percents')
-    ap.add_argument("--data-dir", type=Path,
-                    default=Path(os.environ.get("SCOUTING_SKILLS_DATA_DIR",
-                                                Path.home() / ".scouting-skills")))
-    args = ap.parse_args()
-    show = status_word if args.status_words else cell
-
-    path = args.data_dir / "den-advancement" / f"{slugify(args.den)}.json"
-    if not path.exists():
-        sys.exit(f"{path} not found — run fetch_den_advancement.py first.")
-    data = json.loads(path.read_text())
+def analyze(data: dict) -> dict:
+    """Work out the den rank's rows and each scout's adventures by ID."""
     rank = data["den_rank"]
     scouts = [s for s in data["scouts"] if s.get("captured")]
     missing = [s["name"] for s in data["scouts"] if not s.get("captured")]
@@ -117,20 +101,71 @@ def main() -> None:
         return {a["name"]: a for a in rank_advs(s)
                 if a["adventure_id"] not in required_ids}
 
+    return {
+        "rank": rank, "version": version, "scouts": scouts, "missing": missing,
+        "required": required, "electives_needed": electives_needed,
+        "by_id": [by_id(s) for s in scouts],
+        "electives": [electives(s) for s in scouts],
+    }
+
+
+def adventure_grid(info: dict, show) -> list[tuple[str, bool, list[str]]]:
+    """(adventure name, required?, one cell per scout): required adventures
+    in the rank's order, then electives at least one scout has started."""
+    rows = [(name, True, [show(advs.get(aid)) for advs in info["by_id"]])
+            for name, aid in info["required"]]
+    started = sorted({n for e in info["electives"] for n, a in e.items() if cell(a)})
+    rows += [(name, False, [show(e.get(name)) for e in info["electives"]])
+             for name in started]
+    return rows
+
+
+def local_date(iso: str) -> str:
+    """fetched_at (UTC ISO) as the local calendar date."""
+    return datetime.fromisoformat(iso).astimezone().date().isoformat()
+
+
+def load_den(data_dir: Path, den: str) -> dict:
+    path = data_dir / "den-advancement" / f"{slugify(den)}.json"
+    if not path.exists():
+        sys.exit(f"{path} not found — run fetch_den_advancement.py first.")
+    return json.loads(path.read_text())
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--den", required=True)
+    ap.add_argument("--initials", action="store_true",
+                    help='column headers as "First L." instead of full names')
+    ap.add_argument("--status-words", action="store_true",
+                    help='cells say "Complete" / "Incomplete" / "Not Started" '
+                         'instead of dates and percents')
+    ap.add_argument("--data-dir", type=Path,
+                    default=Path(os.environ.get("SCOUTING_SKILLS_DATA_DIR",
+                                                Path.home() / ".scouting-skills")))
+    args = ap.parse_args()
+    show = status_word if args.status_words else cell
+
+    data = load_den(args.data_dir, args.den)
+    info = analyze(data)
+    rank, version, scouts = info["rank"], info["version"], info["scouts"]
+    required, electives_needed = info["required"], info["electives_needed"]
+
     print(f"### {data['den']} — {rank} rank" + (f" ({version})" if version else ""))
-    print(f"\n_Scoutbook Plus data as of {data['fetched_at'][:10]}_\n")
+    print(f"\n_Scoutbook Plus data as of {local_date(data['fetched_at'])}_\n")
 
     print("| Scout | Rank | Required adventures | Electives |")
     print("|---|---|---|---|")
-    for s in scouts:
+    for i, s in enumerate(scouts):
         r = next((r for r in s["ranks"] if r["name"] == rank
                   and (not version or r["version"] == version)), None)
         status = (r or {}).get("status") or "Not Started"
         if r and r.get("awarded"):
             status += f" {short_date(r['awarded'])}"
-        advs = by_id(s)
+        advs, els = info["by_id"][i], info["electives"][i]
         req_done = sum(is_done(advs.get(aid)) for _, aid in required)
-        el_done = sum(is_done(a) for a in electives(s).values())
+        el_done = sum(is_done(a) for a in els.values())
         print(f"| {s['name']} | {status} | {req_done}/{len(required)} "
               f"| {min(el_done, electives_needed)}/{electives_needed}"
               + (f" (+{el_done - electives_needed})" if el_done > electives_needed else "")
@@ -139,22 +174,19 @@ def main() -> None:
     cols = [label(s, args.initials) for s in scouts]
     print("\n| Adventure | " + " | ".join(cols) + " |")
     print("|---|" + "---|" * len(cols))
-    for name, aid in required:
-        print(f"| **{name}** | " + " | ".join(show(by_id(s).get(aid)) for s in scouts) + " |")
-    per_scout_el = [electives(s) for s in scouts]
-    started = sorted({n for e in per_scout_el for n, a in e.items() if cell(a)})
-    for name in started:
-        print(f"| {name} | " + " | ".join(show(e.get(name)) for e in per_scout_el) + " |")
-    if not started:
-        print(f"| _no electives started yet_ |" + " |" * len(cols))
+    rows = adventure_grid(info, show)
+    for name, req, cells in rows:
+        print(f"| {'**' + name + '**' if req else name} | " + " | ".join(cells) + " |")
+    if not any(not req for _, req, _ in rows):
+        print("| _no electives started yet_ |" + " |" * len(cols))
 
     key = ("Complete = finished; Incomplete = started, not finished"
            if args.status_words else "Date = completed; % = started")
     print(f"\n_Bold = required. {key}. "
           f"The rank needs all {len(required)} required adventures "
           f"plus {electives_needed} electives._")
-    if missing:
-        print(f"\n_No data captured for: {', '.join(missing)}_")
+    if info["missing"]:
+        print(f"\n_No data captured for: {', '.join(info['missing'])}_")
 
 
 if __name__ == "__main__":
