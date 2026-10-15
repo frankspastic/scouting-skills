@@ -131,7 +131,7 @@ def resolve_source_tab(service, spreadsheet_id: str, exclude_title: str) -> dict
     row_count = max(props["gridProperties"]["rowCount"], DATA_START_ROW)
 
     header_resp = service.spreadsheets().values().get(
-        spreadsheetId=spreadsheet_id, range=f"'{title}'!A3:Z3"
+        spreadsheetId=spreadsheet_id, range=f"{sync.quote_tab(title)}!A3:Z3"
     ).execute()
     header_row = header_resp.get("values") or [[]]
     header_row = header_row[0] if header_row else []
@@ -154,8 +154,8 @@ def fetch_den_labels(service, spreadsheet_id: str, src: dict) -> list[str]:
     resp = service.spreadsheets().values().batchGet(
         spreadsheetId=spreadsheet_id,
         ranges=[
-            f"'{src['title']}'!{first_col}{DATA_START_ROW}:{first_col}{src['row_count']}",
-            f"'{src['title']}'!{den_col}{DATA_START_ROW}:{den_col}{src['row_count']}",
+            f"{sync.quote_tab(src['title'])}!{first_col}{DATA_START_ROW}:{first_col}{src['row_count']}",
+            f"{sync.quote_tab(src['title'])}!{den_col}{DATA_START_ROW}:{den_col}{src['row_count']}",
         ],
     ).execute()
     value_ranges = resp.get("valueRanges", [{}, {}])
@@ -188,8 +188,8 @@ def fetch_renewal_labels(service, spreadsheet_id: str, src: dict) -> list[str]:
     resp = service.spreadsheets().values().batchGet(
         spreadsheetId=spreadsheet_id,
         ranges=[
-            f"'{src['title']}'!{first_col}{DATA_START_ROW}:{first_col}{src['row_count']}",
-            f"'{src['title']}'!{renewal_col}{DATA_START_ROW}:{renewal_col}{src['row_count']}",
+            f"{sync.quote_tab(src['title'])}!{first_col}{DATA_START_ROW}:{first_col}{src['row_count']}",
+            f"{sync.quote_tab(src['title'])}!{renewal_col}{DATA_START_ROW}:{renewal_col}{src['row_count']}",
         ],
     ).execute()
     value_ranges = resp.get("valueRanges", [{}, {}])
@@ -206,7 +206,7 @@ def fetch_renewal_labels(service, spreadsheet_id: str, src: dict) -> list[str]:
 
 def source_range(src: dict, colname: str) -> str:
     col = src["cols"][colname]
-    return f"'{src['title']}'!${col}${DATA_START_ROW}:${col}${src['row_count']}"
+    return f"{sync.quote_tab(src['title'])}!${col}${DATA_START_ROW}:${col}${src['row_count']}"
 
 
 def den_row_formulas(row_num: int, label: str, src: dict, dues_present: bool,
@@ -511,10 +511,10 @@ def write_report(service, spreadsheet_id: str, tab: dict, rows: list[list],
     n_cols = max(len(header), 1)
 
     service.spreadsheets().values().clear(
-        spreadsheetId=spreadsheet_id, range=f"'{title}'"
+        spreadsheetId=spreadsheet_id, range=sync.quote_tab(title)
     ).execute()
     service.spreadsheets().values().update(
-        spreadsheetId=spreadsheet_id, range=f"'{title}'!A1",
+        spreadsheetId=spreadsheet_id, range=f"{sync.quote_tab(title)}!A1",
         valueInputOption="USER_ENTERED", body={"values": rows},
     ).execute()
 
@@ -523,7 +523,7 @@ def write_report(service, spreadsheet_id: str, tab: dict, rows: list[list],
     if renewal_block:
         service.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
-            range=f"'{title}'!{col_letter(renewal_col_idx)}3",
+            range=f"{sync.quote_tab(title)}!{col_letter(renewal_col_idx)}3",
             valueInputOption="USER_ENTERED",
             body={"values": renewal_block},
         ).execute()
