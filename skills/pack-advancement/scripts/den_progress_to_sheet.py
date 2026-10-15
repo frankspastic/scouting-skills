@@ -38,6 +38,9 @@ COLORS = {  # cell text -> background (0-1 RGB)
 }
 
 
+MANUAL = "Fill in by hand"
+
+
 def log(msg: str) -> None:
     print(f"[den_progress_to_sheet] {msg}", file=sys.stderr, flush=True)
 
@@ -112,8 +115,11 @@ def build_rows(data: dict, plan: list[tuple[str, str]] | None = None
         # "Bobcat" on a plan means "Bobcat (Webelos)" in Scoutbook.
         a = catalog.get(key) or catalog.get(f"{key} ({info['rank'].lower()})")
         if not a:
-            rows.append([meeting, planned, "Not in Scoutbook"])
-            log(f'"{planned}" ({meeting}) is not a {info["rank"]} adventure in Scoutbook.')
+            # Not tracked in Scoutbook (e.g. America250): a row the leader
+            # fills in by hand; write() keeps those entries across refreshes.
+            rows.append([meeting, planned, MANUAL] + [""] * len(names))
+            log(f'"{planned}" ({meeting}) is not a {info["rank"]} adventure in Scoutbook; '
+                "added as a row to fill in by hand.")
             continue
         seen.add(a["adventure_id"])
         rows.append([meeting, a["name"],
@@ -142,10 +148,42 @@ def tab_for(service, sid: str, title: str, replace: bool) -> int:
     return reply["replies"][0]["addSheet"]["properties"]["sheetId"]
 
 
+def preserve_manual_entries(service, sid: str, tab: str, rows: list[list],
+                            header_idx: int, first_col: int) -> None:
+    """Copy what's already typed in the tab's fill-in-by-hand rows into
+    `rows` (matched by adventure name and scout name), so a refresh from
+    Scoutbook doesn't erase them."""
+    try:
+        old = service.spreadsheets().values().get(
+            spreadsheetId=sid, range=f"{quote_tab(tab)}!A:ZZ").execute().get("values", [])
+    except Exception:
+        return  # new tab
+    type_col, name_col = first_col - 1, first_col - 2
+    old_hdr = next((r for r in old if len(r) > type_col and r[type_col] == "Type"), None)
+    if not old_hdr:
+        return
+    kept = {}
+    for r in old:
+        if len(r) > type_col and r[type_col] == MANUAL:
+            for c in range(first_col, len(r)):
+                if c < len(old_hdr) and r[c]:
+                    kept[(r[name_col], old_hdr[c])] = r[c]
+    new_hdr = rows[header_idx]
+    for row in rows[header_idx + 1:]:
+        if len(row) > type_col and row[type_col] == MANUAL:
+            for c in range(first_col, len(new_hdr)):
+                v = kept.get((row[name_col], new_hdr[c]))
+                if v:
+                    row[c] = v
+    if kept:
+        log(f"Kept {len(kept)} hand-entered cells.")
+
+
 def write(service, sid: str, tab: str, sheet_id: int, rows: list[list],
           header_idx: int, first_col: int) -> None:
     ncols = max(len(r) for r in rows)
     nrows = len(rows)
+    preserve_manual_entries(service, sid, tab, rows, header_idx, first_col)
     # Clear old values, formatting and conditional rules on this tab.
     meta = service.spreadsheets().get(
         spreadsheetId=sid, fields="sheets.properties.sheetId,sheets.conditionalFormats").execute()
@@ -154,7 +192,7 @@ def write(service, sid: str, tab: str, sheet_id: int, rows: list[list],
     reqs = [{"deleteConditionalFormatRule": {"sheetId": sheet_id, "index": 0}}
             for _ in old_rules]
     reqs.append({"updateCells": {"range": {"sheetId": sheet_id},
-                                 "fields": "userEnteredValue,userEnteredFormat"}})
+                                 "fields": "userEnteredValue,userEnteredFormat,dataValidation"}})
     service.spreadsheets().batchUpdate(spreadsheetId=sid, body={"requests": reqs}).execute()
 
     service.spreadsheets().values().update(
@@ -203,6 +241,15 @@ def write(service, sid: str, tab: str, sheet_id: int, rows: list[list],
                                                  "startIndex": first_col, "endIndex": ncols},
                                        "properties": {"pixelSize": 100}, "fields": "pixelSize"}},
     ]
+    # Dropdowns on the rows filled in by hand.
+    type_col = first_col - 1
+    for i, row in enumerate(rows):
+        if i > header_idx and len(row) > type_col and row[type_col] == MANUAL:
+            reqs.append({"setDataValidation": {
+                "range": rng(i, i + 1, first_col, ncols),
+                "rule": {"condition": {"type": "ONE_OF_LIST", "values": [
+                    {"userEnteredValue": w} for w in COLORS]},
+                    "showCustomUi": True, "strict": True}}})
     # Conditional colors, so hand edits to a cell recolor it too.
     for word, (r, g, b) in COLORS.items():
         reqs.append({"addConditionalFormatRule": {"index": 0, "rule": {

@@ -48,7 +48,10 @@ uv run scripts/den_progress.py --den "Webelos Den 7"            # prints markdow
   "Adventure..." columns), in plan order with a Meeting column. Planned
   names are matched loosely ("Race Time - Webelos" matches "Race Time
   (Webelos)", "Bobcat" matches "Bobcat (Webelos)"). Anything Scoutbook doesn't
-  track (e.g. America250) is listed as "Not in Scoutbook". Required
+  track (e.g. America250, the "Liberty in Action" pack challenge) becomes a
+  "Fill in by hand" row with a Complete / Incomplete / Not Started dropdown
+  per scout. The leader fills it in, and `--replace` refreshes keep those
+  entries (matched by adventure and scout name). Required
   adventures missing from the plan are added at the end. Webelos Den 7's
   grid lives in the "2026-2027 Webelos Plan" sheet, which is shared with
   families. Refresh it with `--plan-tab Plan --replace`.
