@@ -7,7 +7,8 @@ den_progress.py — print a markdown rank-progress report for one den from the
 file fetch_den_advancement.py wrote.
 
   * a summary table: each scout's rank status and required/elective counts;
-  * a detail table: one row per required adventure (in the rank's own
+  * a detail table (--status-words for Complete/Incomplete/Not Started
+    cells): one row per required adventure (in the rank's own
     requirement order), then one row per elective at least one scout has
     started; one column per scout. A cell is the completion date (M/D/YY)
     when done, the percent complete when started, blank otherwise.
@@ -50,6 +51,14 @@ def cell(item: dict | None) -> str:
     return f"{round(pct * 100)}%" if pct else ""
 
 
+def status_word(item: dict | None) -> str:
+    if is_done(item):
+        return "Complete"
+    if item and (item.get("percent_completed") or 0) > 0:
+        return "Incomplete"
+    return "Not Started"
+
+
 def label(s: dict, initials: bool) -> str:
     return f"{s['first_name']} {s['last_name'][:1]}." if initials else s["name"]
 
@@ -60,10 +69,14 @@ def main() -> None:
     ap.add_argument("--den", required=True)
     ap.add_argument("--initials", action="store_true",
                     help='column headers as "First L." instead of full names')
+    ap.add_argument("--status-words", action="store_true",
+                    help='cells say "Complete" / "Incomplete" / "Not Started" '
+                         'instead of dates and percents')
     ap.add_argument("--data-dir", type=Path,
                     default=Path(os.environ.get("SCOUTING_SKILLS_DATA_DIR",
                                                 Path.home() / ".scouting-skills")))
     args = ap.parse_args()
+    show = status_word if args.status_words else cell
 
     path = args.data_dir / "den-advancement" / f"{slugify(args.den)}.json"
     if not path.exists():
@@ -127,15 +140,17 @@ def main() -> None:
     print("\n| Adventure | " + " | ".join(cols) + " |")
     print("|---|" + "---|" * len(cols))
     for name, aid in required:
-        print(f"| **{name}** | " + " | ".join(cell(by_id(s).get(aid)) for s in scouts) + " |")
+        print(f"| **{name}** | " + " | ".join(show(by_id(s).get(aid)) for s in scouts) + " |")
     per_scout_el = [electives(s) for s in scouts]
     started = sorted({n for e in per_scout_el for n, a in e.items() if cell(a)})
     for name in started:
-        print(f"| {name} | " + " | ".join(cell(e.get(name)) for e in per_scout_el) + " |")
+        print(f"| {name} | " + " | ".join(show(e.get(name)) for e in per_scout_el) + " |")
     if not started:
         print(f"| _no electives started yet_ |" + " |" * len(cols))
 
-    print(f"\n_Bold = required. Date = completed; % = started. "
+    key = ("Complete = finished; Incomplete = started, not finished"
+           if args.status_words else "Date = completed; % = started")
+    print(f"\n_Bold = required. {key}. "
           f"The rank needs all {len(required)} required adventures "
           f"plus {electives_needed} electives._")
     if missing:
